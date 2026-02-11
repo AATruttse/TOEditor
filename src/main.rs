@@ -8,6 +8,7 @@ mod db;
 mod config;
 mod export;
 mod import;
+mod i18n;
 
 use anyhow::Result;
 use std::panic;
@@ -29,6 +30,10 @@ fn setup_panic_handler() {
 
 fn main() -> Result<()> {
     setup_panic_handler();
+    
+    // Initialize translations if needed
+    // Note: Translations are embedded via build.rs, but we can initialize them here
+    // For bundled translations, select_bundled_translation() should work
     
     // Initialize application
     let app = app::AppMainWindow::new()?;

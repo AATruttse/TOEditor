@@ -9,44 +9,483 @@ export struct ToolbarButton {
 }
 
 export component MainWindow inherits Window {
-    title: @tr("TOEditor");
+    title: root.window-title;
     preferred-width: 1200px;
     preferred-height: 800px;
 
     in-out property <[ToolbarButton]> toolbar: [];
     in-out property <string> window-title: @tr("TOEditor");
     in-out property <bool> sidebar-visible: true;
+    in-out property <string> current-language: "en";
 
-    callback new-library();
-    callback open-library();
-    callback save-library();
-    callback new-formation();
-    callback toggle-sidebar();
-    callback about-dialog();
-    callback show-new-library-dialog();
-    callback show-open-library-dialog();
-    callback save-current-library();
-    callback show-new-formation-dialog();
-    callback show-about-dialog();
+    // Strings set from Rust so they update when language changes
+    in-out property <string> tr-new-library: "New Library";
+    in-out property <string> tr-open-library: "Open Library";
+    in-out property <string> tr-save-library: "Save Library";
+    in-out property <string> tr-language: "Language";
+    in-out property <string> tr-libraries: "Libraries";
+    in-out property <string> tr-welcome-title: "Welcome to TOEditor";
+    in-out property <string> tr-welcome-desc: "Create a new library or open an existing one to get started.";
 
-    VerticalBox {
-        // Menu bar placeholder
-        Rectangle {
-            height: 30px;
-            background: #f0f0f0;
-            HorizontalBox {
-                padding: 5px;
-                Text { text: @tr("File"); vertical-alignment: center; }
-                Rectangle { width: 1px; background: #ccc; }
-                Text { text: @tr("Edit"); vertical-alignment: center; }
-                Rectangle { width: 1px; background: #ccc; }
-                Text { text: @tr("View"); vertical-alignment: center; }
-                Rectangle { width: 1px; background: #ccc; }
-                Text { text: @tr("Help"); vertical-alignment: center; }
+    // Menu strings (set from Rust when language changes)
+    in-out property <string> tr-file: "File";
+    in-out property <string> tr-open-library-ellipsis: "Open Library…";
+    in-out property <string> tr-recent-libraries: "Recent Libraries";
+    in-out property <string> tr-save-library-as: "Save Library As…";
+    in-out property <string> tr-import: "Import";
+    in-out property <string> tr-import-library-from-file: "Import Library from File…";
+    in-out property <string> tr-import-formation-from-file: "Import Formation from File…";
+    in-out property <string> tr-export: "Export";
+    in-out property <string> tr-export-library-ellipsis: "Export Library…";
+    in-out property <string> tr-export-selected-formation: "Export Selected Formation…";
+    in-out property <string> tr-export-as-spreadsheet: "Export as Spreadsheet…";
+    in-out property <string> tr-export-diagram: "Export Diagram…";
+    in-out property <string> tr-exit: "Exit";
+    in-out property <string> tr-edit: "Edit";
+    in-out property <string> tr-find: "Find";
+    in-out property <string> tr-find-and-replace: "Find and Replace";
+    in-out property <string> tr-undo: "Undo";
+    in-out property <string> tr-redo: "Redo";
+    in-out property <string> tr-cut: "Cut";
+    in-out property <string> tr-copy: "Copy";
+    in-out property <string> tr-paste: "Paste";
+    in-out property <string> tr-delete: "Delete";
+    in-out property <string> tr-add-new-formation: "Add New Formation…";
+    in-out property <string> tr-edit-properties: "Edit Properties…";
+    in-out property <string> tr-library: "Library";
+    in-out property <string> tr-positions-and-ranks-editor: "Positions and Ranks Editor…";
+    in-out property <string> tr-equipment-and-vehicles-editor: "Equipment and Vehicles Editor…";
+    in-out property <string> tr-library-properties: "Library Properties…";
+    in-out property <string> tr-manage-tags: "Manage Tags…";
+    in-out property <string> tr-version-control: "Version Control";
+    in-out property <string> tr-view-history: "View History…";
+    in-out property <string> tr-create-snapshot: "Create Snapshot (Commit)…";
+    in-out property <string> tr-compare-versions: "Compare Versions…";
+    in-out property <string> tr-revert-to-version: "Revert to Version…";
+    in-out property <string> tr-unit: "Unit";
+    in-out property <string> tr-add-child-formation: "Add Child Formation…";
+    in-out property <string> tr-delete-this-formation: "Delete This Formation";
+    in-out property <string> tr-move-up: "Move Up";
+    in-out property <string> tr-move-down: "Move Down";
+    in-out property <string> tr-summary-table: "Summary Table";
+    in-out property <string> tr-export-this-formation: "Export This Formation…";
+    in-out property <string> tr-view: "View";
+    in-out property <string> tr-view-mode: "View Mode";
+    in-out property <string> tr-table: "Table";
+    in-out property <string> tr-diagram: "Diagram";
+    in-out property <string> tr-table-and-diagram: "Table and Diagram";
+    in-out property <string> tr-tactical-symbols: "Tactical Symbols";
+    in-out property <string> tr-nato-app6: "NATO (APP-6)";
+    in-out property <string> tr-russia-gost: "Russia (ГОСТ РВ)";
+    in-out property <string> tr-load-custom-set: "Load Custom Set…";
+    in-out property <string> tr-color-scheme: "Color Scheme…";
+    in-out property <string> tr-show-equipment-images: "Show Equipment Images";
+    in-out property <string> tr-zoom: "Zoom";
+    in-out property <string> tr-zoom-in: "Zoom In";
+    in-out property <string> tr-zoom-out: "Zoom Out";
+    in-out property <string> tr-reset-zoom: "Reset Zoom";
+    in-out property <string> tr-refresh: "Refresh";
+    in-out property <string> tr-tools: "Tools";
+    in-out property <string> tr-settings: "Settings…";
+    in-out property <string> tr-interface-language: "Interface Language";
+    in-out property <string> tr-english: "English";
+    in-out property <string> tr-russian: "Russian";
+    in-out property <string> tr-data-paths: "Data Paths…";
+    in-out property <string> tr-reset-settings: "Reset Settings";
+    in-out property <string> tr-help: "Help";
+    in-out property <string> tr-user-guide: "User Guide";
+    in-out property <string> tr-about-toeditor: "About TOEditor…";
+    in-out property <string> tr-check-for-updates: "Check for Updates";
+
+    // File menu callbacks
+    callback file-new-library();
+    callback file-open-library();
+    callback file-recent-libraries();
+    callback file-save-library();
+    callback file-save-library-as();
+    callback file-import-library();
+    callback file-import-formation();
+    callback file-export-library();
+    callback file-export-formation();
+    callback file-export-spreadsheet();
+    callback file-export-diagram();
+    callback file-exit();
+
+    // Edit menu callbacks
+    callback edit-find();
+    callback edit-find-replace();
+    callback edit-undo();
+    callback edit-redo();
+    callback edit-cut();
+    callback edit-copy();
+    callback edit-paste();
+    callback edit-delete();
+    callback edit-add-formation();
+    callback edit-edit-properties();
+
+    // Library menu callbacks
+    callback library-positions-editor();
+    callback library-equipment-editor();
+    callback library-properties();
+    callback library-manage-tags();
+    callback library-export-library();
+    callback library-view-history();
+    callback library-create-snapshot();
+    callback library-compare-versions();
+    callback library-revert-to-version();
+
+    // Unit menu callbacks
+    callback unit-add-child();
+    callback unit-delete();
+    callback unit-move-up();
+    callback unit-move-down();
+    callback unit-summary-table();
+    callback unit-export();
+    callback unit-view-history();
+    callback unit-create-snapshot();
+    callback unit-compare-versions();
+    callback unit-revert-to-version();
+
+    // View menu callbacks
+    callback view-table();
+    callback view-diagram();
+    callback view-table-and-diagram();
+    callback view-symbols-nato();
+    callback view-symbols-russia();
+    callback view-load-symbols();
+    callback view-color-scheme();
+    callback view-show-images();
+    callback view-zoom-in();
+    callback view-zoom-out();
+    callback view-zoom-reset();
+    callback view-refresh();
+
+    // Tools menu callbacks
+    callback tools-settings();
+    callback tools-language();
+    callback tools-data-paths();
+    callback tools-reset-settings();
+
+    // Help menu callbacks
+    callback help-user-guide();
+    callback help-about();
+    callback help-check-updates();
+
+    // Language switching
+    callback switch-language(string);
+    callback switch-to-english();
+    callback switch-to-russian();
+
+    MenuBar {
+        Menu {
+            title: root.tr-file;
+            MenuItem {
+                title: root.tr-new-library;
+                activated => { root.file-new-library(); }
+            }
+            MenuItem {
+                title: root.tr-open-library-ellipsis;
+                activated => { root.file-open-library(); }
+            }
+            MenuItem {
+                title: root.tr-recent-libraries;
+                activated => { root.file-recent-libraries(); }
+            }
+            MenuSeparator {}
+            MenuItem {
+                title: root.tr-save-library;
+                activated => { root.file-save-library(); }
+            }
+            MenuItem {
+                title: root.tr-save-library-as;
+                activated => { root.file-save-library-as(); }
+            }
+            MenuSeparator {}
+            Menu {
+                title: root.tr-import;
+                MenuItem {
+                    title: root.tr-import-library-from-file;
+                    activated => { root.file-import-library(); }
+                }
+                MenuItem {
+                    title: root.tr-import-formation-from-file;
+                    activated => { root.file-import-formation(); }
+                }
+            }
+            Menu {
+                title: root.tr-export;
+                MenuItem {
+                    title: root.tr-export-library-ellipsis;
+                    activated => { root.file-export-library(); }
+                }
+                MenuItem {
+                    title: root.tr-export-selected-formation;
+                    activated => { root.file-export-formation(); }
+                }
+                MenuItem {
+                    title: root.tr-export-as-spreadsheet;
+                    activated => { root.file-export-spreadsheet(); }
+                }
+                MenuItem {
+                    title: root.tr-export-diagram;
+                    activated => { root.file-export-diagram(); }
+                }
+            }
+            MenuSeparator {}
+            MenuItem {
+                title: root.tr-exit;
+                activated => { root.file-exit(); }
             }
         }
+        Menu {
+            title: root.tr-edit;
+            MenuItem {
+                title: root.tr-find;
+                activated => { root.edit-find(); }
+            }
+            MenuItem {
+                title: root.tr-find-and-replace;
+                activated => { root.edit-find-replace(); }
+            }
+            MenuSeparator {}
+            MenuItem {
+                title: root.tr-undo;
+                activated => { root.edit-undo(); }
+            }
+            MenuItem {
+                title: root.tr-redo;
+                activated => { root.edit-redo(); }
+            }
+            MenuSeparator {}
+            MenuItem {
+                title: root.tr-cut;
+                activated => { root.edit-cut(); }
+            }
+            MenuItem {
+                title: root.tr-copy;
+                activated => { root.edit-copy(); }
+            }
+            MenuItem {
+                title: root.tr-paste;
+                activated => { root.edit-paste(); }
+            }
+            MenuItem {
+                title: root.tr-delete;
+                activated => { root.edit-delete(); }
+            }
+            MenuSeparator {}
+            MenuItem {
+                title: root.tr-add-new-formation;
+                activated => { root.edit-add-formation(); }
+            }
+            MenuItem {
+                title: root.tr-edit-properties;
+                activated => { root.edit-edit-properties(); }
+            }
+        }
+        Menu {
+            title: root.tr-library;
+            MenuItem {
+                title: root.tr-positions-and-ranks-editor;
+                activated => { root.library-positions-editor(); }
+            }
+            MenuItem {
+                title: root.tr-equipment-and-vehicles-editor;
+                activated => { root.library-equipment-editor(); }
+            }
+            MenuItem {
+                title: root.tr-library-properties;
+                activated => { root.library-properties(); }
+            }
+            MenuItem {
+                title: root.tr-manage-tags;
+                activated => { root.library-manage-tags(); }
+            }
+            MenuItem {
+                title: root.tr-export-library-ellipsis;
+                activated => { root.library-export-library(); }
+            }
+            MenuSeparator {}
+            Menu {
+                title: root.tr-version-control;
+                MenuItem {
+                    title: root.tr-view-history;
+                    activated => { root.library-view-history(); }
+                }
+                MenuItem {
+                    title: root.tr-create-snapshot;
+                    activated => { root.library-create-snapshot(); }
+                }
+                MenuItem {
+                    title: root.tr-compare-versions;
+                    activated => { root.library-compare-versions(); }
+                }
+                MenuItem {
+                    title: root.tr-revert-to-version;
+                    activated => { root.library-revert-to-version(); }
+                }
+            }
+        }
+        Menu {
+            title: root.tr-unit;
+            MenuItem {
+                title: root.tr-add-child-formation;
+                activated => { root.unit-add-child(); }
+            }
+            MenuItem {
+                title: root.tr-delete-this-formation;
+                activated => { root.unit-delete(); }
+            }
+            MenuItem {
+                title: root.tr-move-up;
+                activated => { root.unit-move-up(); }
+            }
+            MenuItem {
+                title: root.tr-move-down;
+                activated => { root.unit-move-down(); }
+            }
+            MenuItem {
+                title: root.tr-summary-table;
+                activated => { root.unit-summary-table(); }
+            }
+            MenuItem {
+                title: root.tr-export-this-formation;
+                activated => { root.unit-export(); }
+            }
+            MenuSeparator {}
+            Menu {
+                title: root.tr-version-control;
+                MenuItem {
+                    title: root.tr-view-history;
+                    activated => { root.unit-view-history(); }
+                }
+                MenuItem {
+                    title: root.tr-create-snapshot;
+                    activated => { root.unit-create-snapshot(); }
+                }
+                MenuItem {
+                    title: root.tr-compare-versions;
+                    activated => { root.unit-compare-versions(); }
+                }
+                MenuItem {
+                    title: root.tr-revert-to-version;
+                    activated => { root.unit-revert-to-version(); }
+                }
+            }
+        }
+        Menu {
+            title: root.tr-view;
+            Menu {
+                title: root.tr-view-mode;
+                MenuItem {
+                    title: root.tr-table;
+                    activated => { root.view-table(); }
+                }
+                MenuItem {
+                    title: root.tr-diagram;
+                    activated => { root.view-diagram(); }
+                }
+                MenuItem {
+                    title: root.tr-table-and-diagram;
+                    activated => { root.view-table-and-diagram(); }
+                }
+            }
+            MenuSeparator {}
+            Menu {
+                title: root.tr-tactical-symbols;
+                MenuItem {
+                    title: root.tr-nato-app6;
+                    activated => { root.view-symbols-nato(); }
+                }
+                MenuItem {
+                    title: root.tr-russia-gost;
+                    activated => { root.view-symbols-russia(); }
+                }
+                MenuItem {
+                    title: root.tr-load-custom-set;
+                    activated => { root.view-load-symbols(); }
+                }
+            }
+            MenuItem {
+                title: root.tr-color-scheme;
+                activated => { root.view-color-scheme(); }
+            }
+            MenuItem {
+                title: root.tr-show-equipment-images;
+                activated => { root.view-show-images(); }
+            }
+            MenuSeparator {}
+            Menu {
+                title: root.tr-zoom;
+                MenuItem {
+                    title: root.tr-zoom-in;
+                    activated => { root.view-zoom-in(); }
+                }
+                MenuItem {
+                    title: root.tr-zoom-out;
+                    activated => { root.view-zoom-out(); }
+                }
+                MenuItem {
+                    title: root.tr-reset-zoom;
+                    activated => { root.view-zoom-reset(); }
+                }
+            }
+            MenuItem {
+                title: root.tr-refresh;
+                activated => { root.view-refresh(); }
+            }
+        }
+        Menu {
+            title: root.tr-tools;
+            MenuItem {
+                title: root.tr-settings;
+                activated => { root.tools-settings(); }
+            }
+            Menu {
+                title: root.tr-interface-language;
+                MenuItem {
+                    title: root.tr-english;
+                    activated => { 
+                        root.switch-language("en");
+                        root.switch-to-english();
+                    }
+                }
+                MenuItem {
+                    title: root.tr-russian;
+                    activated => { 
+                        root.switch-language("ru");
+                        root.switch-to-russian();
+                    }
+                }
+            }
+            MenuItem {
+                title: root.tr-data-paths;
+                activated => { root.tools-data-paths(); }
+            }
+            MenuItem {
+                title: root.tr-reset-settings;
+                activated => { root.tools-reset-settings(); }
+            }
+        }
+        Menu {
+            title: root.tr-help;
+            MenuItem {
+                title: root.tr-user-guide;
+                activated => { root.help-user-guide(); }
+            }
+            MenuItem {
+                title: root.tr-about-toeditor;
+                activated => { root.help-about(); }
+            }
+            MenuItem {
+                title: root.tr-check-for-updates;
+                activated => { root.help-check-updates(); }
+            }
+        }
+    }
 
-        // Toolbar - simplified for now
+    VerticalBox {
+        // Toolbar
         Rectangle {
             height: 40px;
             background: #e8e8e8;
@@ -54,17 +493,33 @@ export component MainWindow inherits Window {
                 padding: 5px;
                 spacing: 5px;
                 Button {
-                    text: @tr("New Library");
-                    clicked => { root.new-library(); }
+                    text: root.tr-new-library;
+                    clicked => { root.file-new-library(); }
                 }
                 Button {
-                    text: @tr("Open Library");
-                    clicked => { root.open-library(); }
+                    text: root.tr-open-library;
+                    clicked => { root.file-open-library(); }
                 }
                 Button {
-                    text: @tr("Save Library");
+                    text: root.tr-save-library;
                     enabled: false;
-                    clicked => { root.save-library(); }
+                    clicked => { root.file-save-library(); }
+                }
+                Rectangle { width: 2px; background: #bbb; }
+                Text { text: root.tr-language; vertical-alignment: center; }
+                Button {
+                    text: "EN";
+                    clicked => {
+                        root.switch-language("en");
+                        root.switch-to-english();
+                    }
+                }
+                Button {
+                    text: "RU";
+                    clicked => {
+                        root.switch-language("ru");
+                        root.switch-to-russian();
+                    }
                 }
             }
         }
@@ -80,7 +535,7 @@ export component MainWindow inherits Window {
                 VerticalBox {
                     padding: 10px;
                     Text {
-                        text: @tr("Libraries");
+                        text: root.tr-libraries;
                         font-size: 14px;
                         font-weight: 700;
                     }
@@ -97,33 +552,33 @@ export component MainWindow inherits Window {
             // Main content
             VerticalBox {
                 padding: 20px;
-                    Rectangle {
-                        background: white;
-                        height: 100%;
-                        border-width: 1px;
-                        border-color: #ddd;
+                Rectangle {
+                    background: white;
+                    height: 100%;
+                    border-width: 1px;
+                    border-color: #ddd;
                     VerticalBox {
                         padding: 20px;
                         Text {
-                            text: @tr("Welcome to TOEditor");
+                            text: root.tr-welcome-title;
                             font-size: 24px;
                             font-weight: 700;
                         }
                         Rectangle { height: 20px; }
                         Text {
-                            text: @tr("Create a new library or open an existing one to get started.");
+                            text: root.tr-welcome-desc;
                             font-size: 14px;
                         }
                         Rectangle { height: 30px; }
                         HorizontalBox {
                             spacing: 10px;
                             Button {
-                                text: @tr("New Library");
-                                clicked => { root.new-library(); }
+                                text: root.tr-new-library;
+                                clicked => { root.file-new-library(); }
                             }
                             Button {
-                                text: @tr("Open Library");
-                                clicked => { root.open-library(); }
+                                text: root.tr-open-library;
+                                clicked => { root.file-open-library(); }
                             }
                         }
                     }
