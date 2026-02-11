@@ -1,0 +1,32 @@
+//! Organizational chart view component
+
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export struct ChartNode {
+    id: int,
+    name: string,
+    unit-type: string,
+    x: float,
+    y: float,
+}
+
+export component OrgChart inherits Rectangle {
+    in-out property <[ChartNode]> nodes: [];
+    callback node-selected(int);
+
+    // TODO: Implement SVG-based organizational chart rendering
+    // For now, placeholder
+    VerticalBox {
+        padding: 20px;
+        Text {
+            text: @tr("Organizational Chart View");
+            font-size: 20px;
+            font-weight: 700;
+        }
+        Rectangle { height: 20px; }
+        Text {
+            text: @tr("Chart visualization will be implemented here.");
+            font-size: 14px;
+        }
+    }
+}

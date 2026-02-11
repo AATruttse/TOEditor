@@ -1,0 +1,37 @@
+[package]
+name = "toeditor"
+version = "0.1.0"
+edition = "2021"
+authors = ["Anton A. Truttse <dargot@yandex.ru>"]
+description = "Table of Organization & Equipment editor for military units"
+license = "MIT"
+repository = "https://github.com/AATruttse/toeditor"
+readme = "README.md"
+
+[dependencies]
+slint = { version = "1.15.0", features = ["backend-winit"] }
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+directories = "5.0"
+chrono = "0.4"
+toml = "0.8"
+yaml-rust = "0.4"  # For YAML if preferred over JSON
+# Add more later: libgit2 for versions, plotters for advanced diagrams if needed
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[build-dependencies]
+slint-build = "1.7.2"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = 'abort'

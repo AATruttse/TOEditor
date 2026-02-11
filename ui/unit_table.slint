@@ -1,0 +1,83 @@
+//! Unit table view component
+
+import { VerticalBox, HorizontalBox, ListView } from "std-widgets.slint";
+
+export struct UnitRow {
+    id: int,
+    name: string,
+    unit-type: string,
+    personnel-count: int,
+    equipment-count: int,
+}
+
+export component UnitTable inherits Rectangle {
+    in-out property <[UnitRow]> units: [];
+    callback unit-selected(int);
+
+    VerticalBox {
+        // Table header
+        Rectangle {
+            height: 30px;
+            background: #e0e0e0;
+            HorizontalBox {
+                padding: 5px;
+                Text {
+                    text: @tr("Name");
+                    font-weight: 700;
+                    width: 200px;
+                }
+                Text {
+                    text: @tr("Type");
+                    font-weight: 700;
+                    width: 150px;
+                }
+                Text {
+                    text: @tr("Personnel");
+                    font-weight: 700;
+                    width: 100px;
+                }
+                Text {
+                    text: @tr("Equipment");
+                    font-weight: 700;
+                    width: 100px;
+                }
+            }
+        }
+
+        // Table rows
+        ListView {
+            for unit in root.units: {
+                Rectangle {
+                    height: 40px;
+                    background: white;
+                    border-bottom: 1px solid #ddd;
+                    HorizontalBox {
+                        padding: 5px;
+                        Text {
+                            text: unit.name;
+                            width: 200px;
+                        }
+                        Text {
+                            text: unit.unit-type;
+                            width: 150px;
+                        }
+                        Text {
+                            text: unit.personnel-count;
+                            width: 100px;
+                        }
+                        Text {
+                            text: unit.equipment-count;
+                            width: 100px;
+                        }
+                    }
+                    touch := Rectangle {
+                        background: pressed ? #e0e0e0 : (hover ? #f0f0f0 : transparent);
+                        clicked => {
+                            root.unit-selected(unit.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

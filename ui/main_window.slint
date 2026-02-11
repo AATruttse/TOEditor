@@ -1,0 +1,134 @@
+import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export struct ToolbarButton {
+    id: string,
+    icon: string,
+    tooltip: string,
+    enabled: bool,
+    is-separator: bool,
+}
+
+export component MainWindow inherits Window {
+    title: @tr("TOEditor");
+    preferred-width: 1200px;
+    preferred-height: 800px;
+
+    in-out property <[ToolbarButton]> toolbar: [];
+    in-out property <string> window-title: @tr("TOEditor");
+    in-out property <bool> sidebar-visible: true;
+
+    callback new-library();
+    callback open-library();
+    callback save-library();
+    callback new-formation();
+    callback toggle-sidebar();
+    callback about-dialog();
+    callback show-new-library-dialog();
+    callback show-open-library-dialog();
+    callback save-current-library();
+    callback show-new-formation-dialog();
+    callback show-about-dialog();
+
+    VerticalBox {
+        // Menu bar placeholder
+        Rectangle {
+            height: 30px;
+            background: #f0f0f0;
+            HorizontalBox {
+                padding: 5px;
+                Text { text: @tr("File"); vertical-alignment: center; }
+                Rectangle { width: 1px; background: #ccc; }
+                Text { text: @tr("Edit"); vertical-alignment: center; }
+                Rectangle { width: 1px; background: #ccc; }
+                Text { text: @tr("View"); vertical-alignment: center; }
+                Rectangle { width: 1px; background: #ccc; }
+                Text { text: @tr("Help"); vertical-alignment: center; }
+            }
+        }
+
+        // Toolbar - simplified for now
+        Rectangle {
+            height: 40px;
+            background: #e8e8e8;
+            HorizontalBox {
+                padding: 5px;
+                spacing: 5px;
+                Button {
+                    text: @tr("New Library");
+                    clicked => { root.new-library(); }
+                }
+                Button {
+                    text: @tr("Open Library");
+                    clicked => { root.open-library(); }
+                }
+                Button {
+                    text: @tr("Save Library");
+                    enabled: false;
+                    clicked => { root.save-library(); }
+                }
+            }
+        }
+
+        // Main content area
+        HorizontalBox {
+            // Sidebar
+            Rectangle {
+                width: 200px;
+                background: #f5f5f5;
+                border-width: 1px;
+                border-color: #ccc;
+                VerticalBox {
+                    padding: 10px;
+                    Text {
+                        text: @tr("Libraries");
+                        font-size: 14px;
+                        font-weight: 700;
+                    }
+                    Rectangle { height: 10px; }
+                    Rectangle {
+                        background: white;
+                        min-height: 300px;
+                        border-width: 1px;
+                        border-color: #ddd;
+                    }
+                }
+            }
+
+            // Main content
+            VerticalBox {
+                padding: 20px;
+                    Rectangle {
+                        background: white;
+                        height: 100%;
+                        border-width: 1px;
+                        border-color: #ddd;
+                    VerticalBox {
+                        padding: 20px;
+                        Text {
+                            text: @tr("Welcome to TOEditor");
+                            font-size: 24px;
+                            font-weight: 700;
+                        }
+                        Rectangle { height: 20px; }
+                        Text {
+                            text: @tr("Create a new library or open an existing one to get started.");
+                            font-size: 14px;
+                        }
+                        Rectangle { height: 30px; }
+                        HorizontalBox {
+                            spacing: 10px;
+                            Button {
+                                text: @tr("New Library");
+                                clicked => { root.new-library(); }
+                            }
+                            Button {
+                                text: @tr("Open Library");
+                                clicked => { root.open-library(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
