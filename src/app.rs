@@ -5,6 +5,13 @@ slint::include_modules!();
 use anyhow::Result;
 use slint::{ComponentHandle, ModelRc, VecModel, Weak, SharedString};
 use crate::i18n::{Language, TranslationManager};
+use crate::models::Library;
+use crate::services::LibraryService;
+use crate::export;
+use crate::db::Database;
+use crate::config::Settings;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 /// Return translated string for UI (toolbar, sidebar, welcome, menu). Keys match msgid from .po.
 fn ui_tr(lang: &str, key: &str) -> String {
@@ -89,6 +96,9 @@ fn ui_tr(lang: &str, key: &str) -> String {
         "User Guide" => "Руководство пользователя",
         "About TOEditor…" => "О программе…",
         "Check for Updates" => "Проверить обновления",
+        "Delete library?" => "Удалить библиотеку?",
+        "Cancel" => "Отмена",
+        "Delete library \"{}\"? This will delete all versions." => "Удалить библиотеку \"{}\"? Будут удалены все версии.",
         _ => key,
     };
     s.to_string()
@@ -176,11 +186,18 @@ fn apply_ui_translations(window: &MainWindow, lang: &str) {
     window.set_tr_check_for_updates(ui_tr(lang, "Check for Updates").into());
 }
 
+/// Application state shared between callbacks
+struct AppState {
+    database: Option<Database>,
+    current_library: Option<Library>,
+}
+
 /// Main application window structure
 pub struct AppMainWindow {
     window: MainWindow,
     translation_manager: TranslationManager,
-    settings: crate::config::Settings,
+    settings: Settings,
+    state: Rc<RefCell<AppState>>,
 }
 
 impl AppMainWindow {
@@ -200,9 +217,42 @@ impl AppMainWindow {
             eprintln!("Warning: Could not set initial translation: {}", e);
         }
         
+        // Initialize database first
+        let db_path = settings.database_path.clone()
+            .unwrap_or_else(|| crate::config::Settings::default_database_path().unwrap_or_default());
+        let database = if db_path.exists() || db_path.parent().map(|p| p.exists()).unwrap_or(false) {
+            match crate::db::Database::open(&db_path) {
+                Ok(db) => {
+                    eprintln!("[INIT] Database opened: {:?}", db_path);
+                    Some(db)
+                }
+                Err(e) => {
+                    eprintln!("[WARNING] Failed to open database: {}", e);
+                    None
+                }
+            }
+        } else {
+            // Create new database
+            match crate::db::Database::open(&db_path) {
+                Ok(db) => {
+                    eprintln!("[INIT] Database created: {:?}", db_path);
+                    Some(db)
+                }
+                Err(e) => {
+                    eprintln!("[WARNING] Failed to create database: {}", e);
+                    None
+                }
+            }
+        };
+        
+        let state = Rc::new(RefCell::new(AppState {
+            database,
+            current_library: None,
+        }));
+        
         // Set up UI callbacks FIRST, before any other initialization
         eprintln!("[INIT] Setting up callbacks...");
-        setup_callbacks(&window, &mut translation_manager, &mut settings)?;
+        setup_callbacks_with_state(&window, &mut translation_manager, &mut settings, state.clone())?;
         eprintln!("[INIT] Callbacks set up successfully");
         
         // Initialize toolbar
@@ -217,7 +267,54 @@ impl AppMainWindow {
         apply_ui_translations(&window, lang_code);
         eprintln!("[INIT] Initial language set to: {}", lang_code);
         
-        Ok(Self { window, translation_manager, settings })
+        // Load libraries into UI
+        refresh_libraries_list(&window, state.clone());
+        
+        // Initialize database
+        let db_path = settings.database_path.clone()
+            .unwrap_or_else(|| crate::config::Settings::default_database_path().unwrap_or_default());
+        let database = if db_path.exists() || db_path.parent().map(|p| p.exists()).unwrap_or(false) {
+            match crate::db::Database::open(&db_path) {
+                Ok(db) => {
+                    eprintln!("[INIT] Database opened: {:?}", db_path);
+                    Some(db)
+                }
+                Err(e) => {
+                    eprintln!("[WARNING] Failed to open database: {}", e);
+                    None
+                }
+            }
+        } else {
+            // Create new database
+            match crate::db::Database::open(&db_path) {
+                Ok(db) => {
+                    eprintln!("[INIT] Database created: {:?}", db_path);
+                    Some(db)
+                }
+                Err(e) => {
+                    eprintln!("[WARNING] Failed to create database: {}", e);
+                    None
+                }
+            }
+        };
+        
+        let state = Rc::new(RefCell::new(AppState {
+            database,
+            current_library: None,
+        }));
+        
+        // Store state reference for callbacks
+        let state_for_callbacks = state.clone();
+        
+        // Re-setup callbacks with state access
+        setup_callbacks_with_state(&window, &mut translation_manager, &mut settings, state_for_callbacks)?;
+        
+        Ok(Self { 
+            window, 
+            translation_manager, 
+            settings,
+            state,
+        })
     }
     
     /// Run the application
@@ -231,11 +328,12 @@ impl AppMainWindow {
     }
 }
 
-/// Set up all UI callbacks
-fn setup_callbacks(
+/// Set up all UI callbacks with application state
+fn setup_callbacks_with_state(
     window: &MainWindow,
-    translation_manager: &mut TranslationManager,
-    settings: &mut crate::config::Settings,
+    _translation_manager: &mut TranslationManager,
+    _settings: &mut crate::config::Settings,
+    state: Rc<RefCell<AppState>>,
 ) -> Result<()> {
     let weak_window = window.as_weak();
     
@@ -370,15 +468,217 @@ fn setup_callbacks(
         }
     });
     
-    // Stub handlers for all other menu items (TODO: implement functionality)
-    window.on_file_new_library(|| { eprintln!("[DEBUG] File > New Library"); });
-    window.on_file_open_library(|| { eprintln!("[DEBUG] File > Open Library"); });
-    window.on_file_recent_libraries(|| { eprintln!("[DEBUG] File > Recent Libraries"); });
-    window.on_file_save_library(|| { eprintln!("[DEBUG] File > Save Library"); });
-    window.on_file_save_library_as(|| { eprintln!("[DEBUG] File > Save Library As"); });
-    window.on_file_import_library(|| { eprintln!("[DEBUG] File > Import Library"); });
+    // Library management handlers
+    let state_clone = state.clone();
+    let weak_window = window.as_weak();
+    window.on_file_new_library(move || {
+        eprintln!("[DEBUG] File > New Library");
+        if let Some(window) = weak_window.upgrade() {
+            show_library_dialog(&window, "new", -1);
+        }
+    });
+    
+    // Library dialog handlers
+    let state_clone = state.clone();
+    let weak_window = window.as_weak();
+    window.on_library_dialog_accepted(move |name: SharedString, country: SharedString, era: SharedString, author: SharedString, tags: SharedString, library_id: i32| {
+        eprintln!("[DEBUG] Library dialog accepted: name={}, country={}, era={}, author={}, tags={}, id={}", 
+                  name, country, era, author, tags, library_id);
+        
+        // Parse tags first
+        let tags_vec: Vec<String> = tags.to_string()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        
+        let lib_to_update = {
+            let state = state_clone.borrow();
+            state.current_library.clone()
+        };
+        
+        {
+            let state = state_clone.borrow();
+            if let Some(ref db) = state.database {
+                let service = LibraryService::new(db.conn());
+                
+                if library_id == -1 {
+                    // Create new library
+                    let library = Library {
+                        id: None,
+                        name: name.to_string(),
+                        country: country.to_string(),
+                        era: era.to_string(),
+                        author: author.to_string(),
+                        version: 1,
+                        tags: tags_vec,
+                        units: Vec::new(),
+                    };
+                    match service.create_library(library) {
+                        Ok(lib) => {
+                            eprintln!("[INFO] Library created: {} (ID: {:?})", lib.name, lib.id);
+                            drop(state);
+                            let lib_id = lib.id.map(|x| x as i32).unwrap_or(-1);
+                            state_clone.borrow_mut().current_library = Some(lib.clone());
+                            if let Some(window) = weak_window.upgrade() {
+                                window.set_current_library_name(lib.name.clone().into());
+                                window.set_current_library_id(lib_id);
+                                refresh_libraries_list(&window, state_clone.clone());
+                            }
+                        }
+                        Err(e) => eprintln!("[ERROR] Failed to create library: {}", e),
+                    }
+                } else {
+                    // Update existing library
+                    if let Some(mut lib) = lib_to_update {
+                        lib.name = name.to_string();
+                        lib.country = country.to_string();
+                        lib.era = era.to_string();
+                        lib.author = author.to_string();
+                        lib.tags = tags_vec.clone();
+                        match service.save_library(lib.clone(), false) {
+                            Ok(_) => {
+                                eprintln!("[INFO] Library updated successfully");
+                                drop(state);
+                                let lib_id = lib.id.map(|x| x as i32).unwrap_or(-1);
+                                state_clone.borrow_mut().current_library = Some(lib);
+                                if let Some(window) = weak_window.upgrade() {
+                                    window.set_current_library_name(name.clone());
+                                    window.set_current_library_id(lib_id);
+                                    refresh_libraries_list(&window, state_clone.clone());
+                                }
+                            }
+                            Err(e) => eprintln!("[ERROR] Failed to update library: {}", e),
+                        }
+                    }
+                }
+            } else {
+                eprintln!("[ERROR] Database not initialized");
+            }
+        }
+    });
+    
+    window.on_library_dialog_cancelled(|| {
+        eprintln!("[DEBUG] Library dialog cancelled");
+    });
+    
+    let state_clone = state.clone();
+    let weak_window = window.as_weak();
+    window.on_file_open_library(move || {
+        eprintln!("[DEBUG] File > Open Library");
+        // Refresh libraries list
+        if let Some(window) = weak_window.upgrade() {
+            refresh_libraries_list(&window, state_clone.clone());
+        }
+        // TODO: Show dialog to select library
+    });
+    
+    // Library selection callback
+    let state_clone = state.clone();
+    let weak_window = window.as_weak();
+    window.on_library_selected(move |library_id| {
+        eprintln!("[DEBUG] Library selected: {}", library_id);
+        let has_db = {
+            let state = state_clone.borrow();
+            state.database.is_some()
+        };
+        
+        if !has_db {
+            eprintln!("[ERROR] Database not initialized");
+            return;
+        }
+        
+        {
+            let state = state_clone.borrow();
+            if let Some(ref db) = state.database {
+                let service = LibraryService::new(db.conn());
+                match service.get_library(library_id as i64) {
+                    Ok(Some(lib)) => {
+                        eprintln!("[INFO] Loaded library: {}", lib.name);
+                        drop(state);
+                        state_clone.borrow_mut().current_library = Some(lib.clone());
+                        if let Some(window) = weak_window.upgrade() {
+                            window.set_current_library_name(lib.name.clone().into());
+                            window.set_current_library_id(library_id);
+                        }
+                    }
+                    Err(e) => eprintln!("[ERROR] Failed to load library: {}", e),
+                    _ => {}
+                }
+            }
+        }
+    });
+    
+    window.on_file_recent_libraries(|| {
+        eprintln!("[DEBUG] File > Recent Libraries");
+        // TODO: Show list of recently opened libraries
+    });
+    
+    let state_clone = state.clone();
+    window.on_file_save_library(move || {
+        eprintln!("[DEBUG] File > Save Library");
+        let lib_to_save = {
+            let state = state_clone.borrow();
+            state.current_library.clone()
+        };
+        
+        if let Some(lib) = lib_to_save {
+            let state = state_clone.borrow();
+            if let Some(ref db) = state.database {
+                let service = LibraryService::new(db.conn());
+                match service.save_library(lib, true) {
+                    Ok(_) => {
+                        drop(state);
+                        eprintln!("[INFO] Library saved successfully");
+                    }
+                    Err(e) => {
+                        drop(state);
+                        eprintln!("[ERROR] Failed to save library: {}", e);
+                    }
+                }
+            } else {
+                eprintln!("[ERROR] Database not initialized");
+            }
+        } else {
+            eprintln!("[WARNING] No library to save. Create or open a library first.");
+        }
+    });
+    
+    window.on_file_save_library_as(|| {
+        eprintln!("[DEBUG] File > Save Library As");
+        // TODO: Show file dialog to save as JSON
+    });
+    
+    let state_clone = state.clone();
+    window.on_file_import_library(move || {
+        eprintln!("[DEBUG] File > Import Library");
+        // TODO: Show file dialog to import JSON
+        // For now, demonstrate import from a test file
+        let state = state_clone.borrow();
+        if let Some(ref db) = state.database {
+            // Example: import from temp file
+            eprintln!("[INFO] Import functionality - TODO: implement file dialog");
+        }
+    });
+    
     window.on_file_import_formation(|| { eprintln!("[DEBUG] File > Import Formation"); });
-    window.on_file_export_library(|| { eprintln!("[DEBUG] File > Export Library"); });
+    
+    let state_clone = state.clone();
+    window.on_file_export_library(move || {
+        eprintln!("[DEBUG] File > Export Library");
+        let state = state_clone.borrow();
+        if let Some(ref lib) = state.current_library {
+            // Export to temp directory for now
+            let path = std::env::temp_dir().join(format!("{}.json", lib.name));
+            match export::export_json(lib, &path) {
+                Ok(_) => eprintln!("[INFO] Library exported to: {:?}", path),
+                Err(e) => eprintln!("[ERROR] Failed to export library: {}", e),
+            }
+        } else {
+            eprintln!("[WARNING] No library to export. Create or open a library first.");
+        }
+    });
+    
     window.on_file_export_formation(|| { eprintln!("[DEBUG] File > Export Formation"); });
     window.on_file_export_spreadsheet(|| { eprintln!("[DEBUG] File > Export Spreadsheet"); });
     window.on_file_export_diagram(|| { eprintln!("[DEBUG] File > Export Diagram"); });
@@ -398,13 +698,109 @@ fn setup_callbacks(
     // Library menu actions
     window.on_library_positions_editor(|| { eprintln!("[DEBUG] Library > Positions Editor"); });
     window.on_library_equipment_editor(|| { eprintln!("[DEBUG] Library > Equipment Editor"); });
-    window.on_library_properties(|| { eprintln!("[DEBUG] Library > Properties"); });
+    
+    // Library properties/edit - show dialog
+    let state_clone = state.clone();
+    let weak_window = window.as_weak();
+    window.on_library_properties(move || {
+        eprintln!("[DEBUG] Library > Properties");
+        let state = state_clone.borrow();
+        if let Some(ref lib) = state.current_library {
+                if let Some(lib_id) = lib.id {
+                drop(state);
+                if let Some(window) = weak_window.upgrade() {
+                    show_library_dialog_for_edit(&window, lib_id as i32, state_clone.clone());
+                }
+            }
+        } else {
+            eprintln!("[WARNING] No library selected");
+        }
+    });
+    
     window.on_library_manage_tags(|| { eprintln!("[DEBUG] Library > Manage Tags"); });
     window.on_library_export_library(|| { eprintln!("[DEBUG] Library > Export Library"); });
     window.on_library_view_history(|| { eprintln!("[DEBUG] Library > View History"); });
     window.on_library_create_snapshot(|| { eprintln!("[DEBUG] Library > Create Snapshot"); });
     window.on_library_compare_versions(|| { eprintln!("[DEBUG] Library > Compare Versions"); });
     window.on_library_revert_to_version(|| { eprintln!("[DEBUG] Library > Revert to Version"); });
+    
+    // Library delete: show confirmation dialog, then delete on confirm
+    let state_clone = state.clone();
+    let weak_window = window.as_weak();
+    window.on_library_delete(move || {
+        eprintln!("[DEBUG] Library > Delete");
+        let (lib_id, lib_name) = {
+            let state = state_clone.borrow();
+            match &state.current_library {
+                Some(lib) => match lib.id {
+                    Some(id) => (id, lib.name.clone()),
+                    None => {
+                        eprintln!("[WARNING] Library has no id");
+                        return;
+                    }
+                },
+                None => {
+                    eprintln!("[WARNING] No library selected");
+                    return;
+                }
+            }
+        };
+        let lang = weak_window
+            .upgrade()
+            .map(|w| w.get_current_language().to_string())
+            .unwrap_or_else(|| "en".to_string());
+        let message = ui_tr(&lang, "Delete library \"{}\"? This will delete all versions.").replace("{}", &lib_name);
+        let dialog = match ConfirmDeleteDialog::new() {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("[ERROR] Failed to create confirm dialog: {}", e);
+                return;
+            }
+        };
+        dialog.set_dialog_title(ui_tr(&lang, "Delete library?").into());
+        dialog.set_cancel_text(ui_tr(&lang, "Cancel").into());
+        dialog.set_delete_text(ui_tr(&lang, "Delete").into());
+        dialog.set_message(message.into());
+        let weak_dialog1 = dialog.as_weak();
+        let weak_dialog2 = dialog.as_weak();
+        let state_for_confirm = state_clone.clone();
+        let weak_window_confirm = weak_window.clone();
+        dialog.on_confirmed(move || {
+            if let Some(d) = weak_dialog1.upgrade() {
+                d.hide().unwrap_or_default();
+            }
+            let delete_ok = {
+                let state = state_for_confirm.borrow();
+                if let Some(ref db) = state.database {
+                    let service = LibraryService::new(db.conn());
+                    match service.delete_library(lib_id) {
+                        Ok(_) => true,
+                        Err(e) => {
+                            eprintln!("[ERROR] Failed to delete library: {}", e);
+                            false
+                        }
+                    }
+                } else {
+                    false
+                }
+            };
+            if delete_ok {
+                eprintln!("[INFO] Library deleted successfully");
+                state_for_confirm.borrow_mut().current_library = None;
+                if let Some(window) = weak_window_confirm.upgrade() {
+                    window.set_current_library_name("".into());
+                    window.set_current_library_id(-1);
+                    refresh_libraries_list(&window, state_for_confirm.clone());
+                }
+            }
+        });
+        dialog.on_cancelled(move || {
+            if let Some(d) = weak_dialog2.upgrade() {
+                d.hide().unwrap_or_default();
+            }
+        });
+        dialog.show().unwrap_or_default();
+    });
     
     // Unit menu actions
     window.on_unit_add_child(|| { eprintln!("[DEBUG] Unit > Add Child"); });
@@ -444,6 +840,144 @@ fn setup_callbacks(
     window.on_help_check_updates(|| { eprintln!("[DEBUG] Help > Check Updates"); });
     
     Ok(())
+}
+
+/// Show library dialog for creating new library
+fn show_library_dialog(window: &MainWindow, _mode: &str, library_id: i32) {
+    use slint::ComponentHandle;
+    
+    let dialog = match LibraryDialog::new() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("[ERROR] Failed to create library dialog: {}", e);
+            return;
+        }
+    };
+    
+    // New library - set defaults
+    dialog.set_library_name("".into());
+    dialog.set_library_country("US".into());
+    dialog.set_library_era("2024".into());
+    dialog.set_library_author("".into());
+    dialog.set_library_tags("".into());
+    
+    let weak_dialog1 = dialog.as_weak();
+    let weak_dialog2 = weak_dialog1.clone();
+    let weak_window1 = window.as_weak();
+    let weak_window2 = window.as_weak();
+    
+    dialog.on_accepted(move || {
+        if let Some(d) = weak_dialog1.upgrade() {
+            let name = d.get_library_name();
+            let country = d.get_library_country();
+            let era = d.get_library_era();
+            let author = d.get_library_author();
+            let tags = d.get_library_tags();
+            
+            if let Some(w) = weak_window1.upgrade() {
+                w.invoke_library_dialog_accepted(name, country, era, author, tags, library_id);
+            }
+            d.hide().unwrap_or_default();
+        }
+    });
+    
+    dialog.on_cancelled(move || {
+        if let Some(d) = weak_dialog2.upgrade() {
+            if let Some(w) = weak_window2.upgrade() {
+                w.invoke_library_dialog_cancelled();
+            }
+            d.hide().unwrap_or_default();
+        }
+    });
+    
+    dialog.show().unwrap_or_default();
+}
+
+/// Show library dialog for editing existing library
+fn show_library_dialog_for_edit(window: &MainWindow, library_id: i32, state: Rc<RefCell<AppState>>) {
+    use slint::ComponentHandle;
+    
+    let dialog = match LibraryDialog::new() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("[ERROR] Failed to create library dialog: {}", e);
+            return;
+        }
+    };
+    
+    // Load library data for editing
+    let lib_data = {
+        let state = state.borrow();
+        state.current_library.clone()
+    };
+    
+    if let Some(ref lib) = lib_data {
+        dialog.set_library_name(lib.name.clone().into());
+        dialog.set_library_country(lib.country.clone().into());
+        dialog.set_library_era(lib.era.clone().into());
+        dialog.set_library_author(lib.author.clone().into());
+        dialog.set_library_tags(lib.tags.join(", ").into());
+    }
+    
+    let weak_dialog1 = dialog.as_weak();
+    let weak_dialog2 = weak_dialog1.clone();
+    let weak_window1 = window.as_weak();
+    let weak_window2 = window.as_weak();
+    
+    dialog.on_accepted(move || {
+        if let Some(d) = weak_dialog1.upgrade() {
+            let name = d.get_library_name();
+            let country = d.get_library_country();
+            let era = d.get_library_era();
+            let author = d.get_library_author();
+            let tags = d.get_library_tags();
+            
+            if let Some(w) = weak_window1.upgrade() {
+                w.invoke_library_dialog_accepted(name, country, era, author, tags, library_id);
+            }
+            d.hide().unwrap_or_default();
+        }
+    });
+    
+    dialog.on_cancelled(move || {
+        if let Some(d) = weak_dialog2.upgrade() {
+            if let Some(w) = weak_window2.upgrade() {
+                w.invoke_library_dialog_cancelled();
+            }
+            d.hide().unwrap_or_default();
+        }
+    });
+    
+    dialog.show().unwrap_or_default();
+}
+
+/// Refresh libraries list in the UI
+fn refresh_libraries_list(window: &MainWindow, state: Rc<RefCell<AppState>>) {
+    let state = state.borrow();
+    if let Some(ref db) = state.database {
+        let service = LibraryService::new(db.conn());
+        match service.list_libraries() {
+            Ok(libraries) => {
+                use slint::ModelRc;
+                let library_items: Vec<LibraryItem> = libraries
+                    .iter()
+                    .filter_map(|lib| {
+                        lib.id.map(|id| LibraryItem {
+                            id: id as i32,
+                            name: lib.name.clone().into(),
+                            country: lib.country.clone().into(),
+                            era: lib.era.clone().into(),
+                        })
+                    })
+                    .collect();
+                window.set_libraries(ModelRc::new(VecModel::from(library_items)));
+                eprintln!("[INFO] Refreshed libraries list: {} libraries", libraries.len());
+            }
+            Err(e) => {
+                eprintln!("[ERROR] Failed to load libraries: {}", e);
+            }
+        }
+    }
 }
 
 /// Initialize toolbar

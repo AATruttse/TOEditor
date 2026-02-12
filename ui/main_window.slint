@@ -1,11 +1,155 @@
 import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
+export component LibraryDialog inherits Window {
+    width: 500px;
+    height: 400px;
+    title: "Library Properties";
+    
+    in-out property <string> library-name: "";
+    in-out property <string> library-country: "";
+    in-out property <string> library-era: "";
+    in-out property <string> library-author: "";
+    in-out property <string> library-tags: "";
+    
+    callback accepted();
+    callback cancelled();
+    
+    VerticalBox {
+        padding: 20px;
+        spacing: 10px;
+        
+        Text {
+            text: "Library Properties";
+            font-size: 18px;
+            font-weight: 700;
+        }
+        
+        Rectangle { height: 10px; }
+        
+        VerticalBox {
+            spacing: 8px;
+            
+            Text {
+                text: "Name:";
+                font-size: 12px;
+            }
+            TextInput {
+                text: root.library-name;
+            }
+            
+            Text {
+                text: "Country:";
+                font-size: 12px;
+            }
+            TextInput {
+                text: root.library-country;
+            }
+            
+            Text {
+                text: "Era:";
+                font-size: 12px;
+            }
+            TextInput {
+                text: root.library-era;
+            }
+            
+            Text {
+                text: "Author:";
+                font-size: 12px;
+            }
+            TextInput {
+                text: root.library-author;
+            }
+            
+            Text {
+                text: "Tags (comma-separated):";
+                font-size: 12px;
+            }
+            TextInput {
+                text: root.library-tags;
+            }
+        }
+        
+        Rectangle { height: 20px; }
+        
+        HorizontalBox {
+            alignment: end;
+            spacing: 10px;
+            
+            Button {
+                text: "Cancel";
+                clicked => {
+                    root.cancelled();
+                }
+            }
+            Button {
+                text: "OK";
+                clicked => {
+                    root.accepted();
+                }
+            }
+        }
+    }
+}
+
+export component ConfirmDeleteDialog inherits Window {
+    width: 420px;
+    height: 180px;
+    title: root.dialog-title;
+    
+    in-out property <string> message: "";
+    in-out property <string> dialog-title: "Delete library?";
+    in-out property <string> cancel-text: "Cancel";
+    in-out property <string> delete-text: "Delete";
+    
+    callback confirmed();
+    callback cancelled();
+    
+    VerticalBox {
+        padding: 20px;
+        spacing: 16px;
+        
+        Text {
+            text: root.message;
+            font-size: 14px;
+            wrap: word-wrap;
+        }
+        
+        Rectangle { height: 10px; }
+        
+        HorizontalBox {
+            alignment: end;
+            spacing: 10px;
+            
+            Button {
+                text: root.cancel-text;
+                clicked => {
+                    root.cancelled();
+                }
+            }
+            Button {
+                text: root.delete-text;
+                clicked => {
+                    root.confirmed();
+                }
+            }
+        }
+    }
+}
+
 export struct ToolbarButton {
     id: string,
     icon: string,
     tooltip: string,
     enabled: bool,
     is-separator: bool,
+}
+
+export struct LibraryItem {
+    id: int,
+    name: string,
+    country: string,
+    era: string,
 }
 
 export component MainWindow inherits Window {
@@ -17,6 +161,9 @@ export component MainWindow inherits Window {
     in-out property <string> window-title: @tr("TOEditor");
     in-out property <bool> sidebar-visible: true;
     in-out property <string> current-language: "en";
+    in-out property <[LibraryItem]> libraries: [];
+    in-out property <string> current-library-name: "";
+    in-out property <int> current-library-id: -1;
 
     // Strings set from Rust so they update when language changes
     in-out property <string> tr-new-library: "New Library";
@@ -133,6 +280,12 @@ export component MainWindow inherits Window {
     callback library-create-snapshot();
     callback library-compare-versions();
     callback library-revert-to-version();
+    callback library-delete();
+    
+    // Library dialog callbacks
+    callback show-library-dialog(string, int); // mode: "new" or "edit", library_id for edit
+    callback library-dialog-accepted(string, string, string, string, string, int); // name, country, era, author, tags, library_id (-1 for new)
+    callback library-dialog-cancelled();
 
     // Unit menu callbacks
     callback unit-add-child();
@@ -175,6 +328,9 @@ export component MainWindow inherits Window {
     callback switch-language(string);
     callback switch-to-english();
     callback switch-to-russian();
+
+    // Library selection
+    callback library-selected(int);
 
     MenuBar {
         Menu {
@@ -545,6 +701,42 @@ export component MainWindow inherits Window {
                         min-height: 300px;
                         border-width: 1px;
                         border-color: #ddd;
+                        VerticalBox {
+                            for library[index] in root.libraries: Rectangle {
+                                height: 30px;
+                                background: library.id == root.current-library-id ? #e0e0e0 : #ffffff;
+                                HorizontalBox {
+                                    padding: 5px;
+                                    Text {
+                                        text: library.name;
+                                        font-size: 12px;
+                                    }
+                                }
+                                touch := TouchArea {
+                                    clicked => {
+                                        root.library-selected(library.id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Rectangle { height: 10px; }
+                    HorizontalBox {
+                        spacing: 5px;
+                        Button {
+                            text: "Edit";
+                            enabled: root.current-library-id >= 0;
+                            clicked => {
+                                root.library-properties();
+                            }
+                        }
+                        Button {
+                            text: "Delete";
+                            enabled: root.current-library-id >= 0;
+                            clicked => {
+                                root.library-delete();
+                            }
+                        }
                     }
                 }
             }

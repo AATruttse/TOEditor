@@ -2,14 +2,6 @@
 //! 
 //! A cross-platform tool for editing military organizational structures
 
-mod app;
-mod models;
-mod db;
-mod config;
-mod export;
-mod import;
-mod i18n;
-
 use anyhow::Result;
 use std::panic;
 
@@ -36,7 +28,7 @@ fn main() -> Result<()> {
     // For bundled translations, select_bundled_translation() should work
     
     // Initialize application
-    let app = app::AppMainWindow::new()?;
+    let app = toeditor::app::AppMainWindow::new()?;
     
     // Run the UI
     app.run()?;

@@ -28,7 +28,12 @@ mod tests {
 
     #[test]
     fn test_export_csv() {
-        let library = Library::new("Test".to_string(), "US".to_string(), "2003".to_string());
+        let library = Library::new(
+            "Test".to_string(),
+            "US".to_string(),
+            "2003".to_string(),
+            "Author".to_string(),
+        );
         let file = NamedTempFile::new().unwrap();
         export_csv(&library, file.path()).unwrap();
         

@@ -1,7 +1,9 @@
 //! Database connection and migration management
 
+pub mod repositories;
+
 use anyhow::Result;
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 use std::path::Path;
 
 /// Database connection wrapper
@@ -39,12 +41,24 @@ impl Database {
                 name TEXT NOT NULL,
                 country TEXT NOT NULL,
                 era TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT '',
+                version INTEGER NOT NULL DEFAULT 1,
                 tags TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )",
             [],
         )?;
+
+        // Migrate existing databases: add author and version columns if they don't exist
+        let _ = self.conn.execute(
+            "ALTER TABLE libraries ADD COLUMN author TEXT NOT NULL DEFAULT ''",
+            [],
+        );
+        let _ = self.conn.execute(
+            "ALTER TABLE libraries ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+            [],
+        );
 
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS units (

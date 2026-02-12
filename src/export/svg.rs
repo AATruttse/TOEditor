@@ -31,7 +31,12 @@ mod tests {
 
     #[test]
     fn test_export_svg() {
-        let library = Library::new("Test".to_string(), "US".to_string(), "2003".to_string());
+        let library = Library::new(
+            "Test".to_string(),
+            "US".to_string(),
+            "2003".to_string(),
+            "Author".to_string(),
+        );
         let file = NamedTempFile::new().unwrap();
         export_svg(&library, file.path()).unwrap();
         

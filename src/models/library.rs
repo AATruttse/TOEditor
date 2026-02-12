@@ -14,6 +14,10 @@ pub struct Library {
     pub country: String,
     /// Era/period (e.g., "2003", "Cold War")
     pub era: String,
+    /// Author of the library
+    pub author: String,
+    /// Current version number
+    pub version: i64,
     /// Tags for categorization
     pub tags: Vec<String>,
     /// Units in this library
@@ -22,15 +26,27 @@ pub struct Library {
 
 impl Library {
     /// Create a new library
-    pub fn new(name: String, country: String, era: String) -> Self {
+    pub fn new(name: String, country: String, era: String, author: String) -> Self {
         Self {
             id: None,
             name,
             country,
             era,
+            author,
+            version: 1,
             tags: Vec::new(),
             units: Vec::new(),
         }
+    }
+
+    /// Increment version number
+    pub fn increment_version(&mut self) {
+        self.version += 1;
+    }
+
+    /// Set version number
+    pub fn set_version(&mut self, version: i64) {
+        self.version = version;
     }
 
     /// Add a unit to the library
@@ -169,11 +185,33 @@ mod tests {
 
     #[test]
     fn test_library_creation() {
-        let lib = Library::new("Test".to_string(), "US".to_string(), "2003".to_string());
+        let lib = Library::new(
+            "Test".to_string(),
+            "US".to_string(),
+            "2003".to_string(),
+            "Author".to_string(),
+        );
         assert_eq!(lib.name, "Test");
         assert_eq!(lib.country, "US");
         assert_eq!(lib.era, "2003");
+        assert_eq!(lib.author, "Author");
+        assert_eq!(lib.version, 1);
         assert_eq!(lib.units.len(), 0);
+    }
+
+    #[test]
+    fn test_library_version() {
+        let mut lib = Library::new(
+            "Test".to_string(),
+            "US".to_string(),
+            "2003".to_string(),
+            "Author".to_string(),
+        );
+        assert_eq!(lib.version, 1);
+        lib.increment_version();
+        assert_eq!(lib.version, 2);
+        lib.set_version(5);
+        assert_eq!(lib.version, 5);
     }
 
     #[test]

@@ -95,9 +95,21 @@ mod tests {
 
     #[test]
     fn test_create_snapshot() {
+        use crate::db::repositories::LibraryRepo;
+        use crate::models::Library;
+        
         let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let mut library = Library::new(
+            "Test".to_string(),
+            "US".to_string(),
+            "2003".to_string(),
+            "Author".to_string(),
+        );
+        lib_repo.create(&mut library).unwrap();
+        
         let repo = VersionRepo::new(db.conn());
-        let mut snapshot = Snapshot::new(1, 1, "{}".to_string());
+        let mut snapshot = Snapshot::new(library.id.unwrap(), 1, "{}".to_string());
         repo.create(&mut snapshot).unwrap();
         assert!(snapshot.id.is_some());
     }
