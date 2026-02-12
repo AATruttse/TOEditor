@@ -137,6 +137,58 @@ export component ConfirmDeleteDialog inherits Window {
     }
 }
 
+export component LibraryContextMenu inherits Window {
+    width: 200px;
+    title: "";
+    in-out property <int> library-id: -1;
+    callback properties();
+    callback export-library();
+    callback history();
+    callback delete-library();
+    callback cancelled();
+    Rectangle {
+        background: #ffffff;
+        border-width: 1px;
+        border-color: #999;
+        VerticalBox {
+            padding: 4px;
+        TouchArea {
+            height: 28px;
+            HorizontalBox {
+                padding: 8px;
+                Text { text: "Properties…"; font-size: 12px; }
+            }
+            clicked => { root.properties(); }
+        }
+        TouchArea {
+            height: 28px;
+            HorizontalBox {
+                padding: 8px;
+                Text { text: "Export…"; font-size: 12px; }
+            }
+            clicked => { root.export-library(); }
+        }
+        TouchArea {
+            height: 28px;
+            HorizontalBox {
+                padding: 8px;
+                Text { text: "View history…"; font-size: 12px; }
+            }
+            clicked => { root.history(); }
+        }
+        Rectangle { height: 2px; background: #ddd; }
+        TouchArea {
+            height: 28px;
+            HorizontalBox {
+                padding: 8px;
+                Text { text: "Delete"; font-size: 12px; }
+            }
+            clicked => { root.delete-library(); }
+        }
+        }
+    }
+}
+
 export struct ToolbarButton {
     id: string,
     icon: string,
@@ -152,6 +204,18 @@ export struct LibraryItem {
     era: string,
 }
 
+export struct FormationTab {
+    id: int,
+    title: string,
+    view-mode: string, // "table" | "diagram" | "both"
+}
+
+export struct FormationTreeItem {
+    id: int,
+    name: string,
+    depth: int,
+}
+
 export component MainWindow inherits Window {
     title: root.window-title;
     preferred-width: 1200px;
@@ -164,6 +228,13 @@ export component MainWindow inherits Window {
     in-out property <[LibraryItem]> libraries: [];
     in-out property <string> current-library-name: "";
     in-out property <int> current-library-id: -1;
+    in-out property <bool> libraries-sidebar-expanded: true;
+    in-out property <bool> formations-sidebar-expanded: true;
+    in-out property <[FormationTreeItem]> formations: [];
+    in-out property <[FormationTab]> open-tabs: [];
+    in-out property <int> current-tab-index: -1;
+    in-out property <string> current-tab-title: "";
+    in-out property <string> current-tab-view-mode: "table";
 
     // Strings set from Rust so they update when language changes
     in-out property <string> tr-new-library: "New Library";
@@ -329,8 +400,17 @@ export component MainWindow inherits Window {
     callback switch-to-english();
     callback switch-to-russian();
 
-    // Library selection
+    // Library selection and context menu
     callback library-selected(int);
+    callback library-right-clicked(int, float, float);
+    callback toggle-libraries-sidebar();
+    callback toggle-formations-sidebar();
+    // Formations tree
+    callback formation-open(int);
+    // Tabs
+    callback tab-select(int);
+    callback tab-close(int);
+    callback tab-set-view-mode(int, string);
 
     MenuBar {
         Menu {
@@ -680,102 +760,279 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Main content area
+        // Main content: two collapsible sidebars + center with tabs
         HorizontalBox {
-            // Sidebar
+            // === Left: Collapsible Libraries sidebar ===
             Rectangle {
-                width: 200px;
-                background: #f5f5f5;
+                width: root.libraries-sidebar-expanded ? 220px : 28px;
+                background: #f0f0f0;
                 border-width: 1px;
                 border-color: #ccc;
-                VerticalBox {
-                    padding: 10px;
-                    Text {
-                        text: root.tr-libraries;
-                        font-size: 14px;
-                        font-weight: 700;
+                HorizontalBox {
+                    if root.libraries-sidebar-expanded: VerticalBox {
+                        padding: 8px;
+                        HorizontalBox {
+                            Text {
+                                text: root.tr-libraries;
+                                font-size: 14px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                            Rectangle { width: 5px; }
+                            touch-toggle := TouchArea {
+                                width: 24px;
+                                height: 24px;
+                                Text {
+                                    text: "◀";
+                                    font-size: 12px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                clicked => { root.toggle-libraries-sidebar(); }
+                            }
+                        }
+                        Rectangle { height: 8px; }
+                        Rectangle {
+                            background: white;
+                            min-height: 200px;
+                            border-width: 1px;
+                            border-color: #ddd;
+                            VerticalBox {
+                                for library[index] in root.libraries: Rectangle {
+                                    height: 28px;
+                                    background: library.id == root.current-library-id ? #e0e0e0 : #ffffff;
+                                    HorizontalBox {
+                                        padding: 4px;
+                                        Text {
+                                            text: library.name;
+                                            font-size: 12px;
+                                            overflow: elide;
+                                        }
+                                    }
+                                    touch-lib := TouchArea {
+                                        clicked => {
+                                            root.library-selected(library.id);
+                                        }
+                                        pointer-event(event) => {
+                                            if (event.button == PointerEventButton.right && event.kind == PointerEventKind.down) {
+                                                root.library-right-clicked(library.id, 0, 0);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                    Rectangle { height: 10px; }
-                    Rectangle {
-                        background: white;
-                        min-height: 300px;
-                        border-width: 1px;
-                        border-color: #ddd;
-                        VerticalBox {
-                            for library[index] in root.libraries: Rectangle {
-                                height: 30px;
-                                background: library.id == root.current-library-id ? #e0e0e0 : #ffffff;
-                                HorizontalBox {
-                                    padding: 5px;
+                    if !root.libraries-sidebar-expanded: VerticalBox {
+                        padding: 8px;
+                        TouchArea {
+                            width: 24px;
+                            height: 24px;
+                            Text {
+                                text: "▶";
+                                font-size: 12px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            clicked => { root.toggle-libraries-sidebar(); }
+                        }
+                    }
+                }
+            }
+
+            // === Collapsible Formations sidebar (only when library open) ===
+            if root.current-library-id >= 0: Rectangle {
+                width: root.formations-sidebar-expanded ? 200px : 28px;
+                background: #e8e8e8;
+                border-width: 1px;
+                border-color: #ccc;
+                HorizontalBox {
+                    if root.formations-sidebar-expanded: VerticalBox {
+                        padding: 8px;
+                        HorizontalBox {
+                            Text {
+                                text: root.tr-unit;
+                                font-size: 14px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                            Rectangle { width: 5px; }
+                            TouchArea {
+                                width: 24px;
+                                height: 24px;
+                                Text {
+                                    text: "◀";
+                                    font-size: 12px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                clicked => { root.toggle-formations-sidebar(); }
+                            }
+                        }
+                        Rectangle { height: 8px; }
+                        Rectangle {
+                            background: white;
+                            min-height: 200px;
+                            border-width: 1px;
+                            border-color: #ddd;
+                            VerticalBox {
+                                for formation[index] in root.formations: Rectangle {
+                                    height: 26px;
+                                    HorizontalBox {
+                                        padding-left: formation.depth * 12px + 4px;
+                                        padding-top: 4px;
+                                        padding-bottom: 4px;
+                                        Text {
+                                            text: formation.name;
+                                            font-size: 12px;
+                                            overflow: elide;
+                                        }
+                                    }
+                                    touch-form := TouchArea {
+                                        clicked => {
+                                            root.formation-open(formation.id);
+                                        }
+                                    }
+                                }
+                                if root.formations.length == 0: Rectangle {
+                                    height: 60px;
                                     Text {
-                                        text: library.name;
-                                        font-size: 12px;
-                                    }
-                                }
-                                touch := TouchArea {
-                                    clicked => {
-                                        root.library-selected(library.id);
+                                        text: root.tr-welcome-desc;
+                                        font-size: 11px;
+                                        wrap: word-wrap;
                                     }
                                 }
                             }
                         }
                     }
-                    Rectangle { height: 10px; }
+                    if !root.formations-sidebar-expanded: VerticalBox {
+                        padding: 8px;
+                        TouchArea {
+                            width: 24px;
+                            height: 24px;
+                            Text {
+                                text: "▶";
+                                font-size: 12px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            clicked => { root.toggle-formations-sidebar(); }
+                        }
+                    }
+                }
+            }
+
+            // === Center: Tab bar + content ===
+            VerticalBox {
+                // Tab bar
+                Rectangle {
+                    height: 32px;
+                    background: #e0e0e0;
+                    border-width: 1px;
+                    border-color: #bbb;
                     HorizontalBox {
-                        spacing: 5px;
-                        Button {
-                            text: "Edit";
-                            enabled: root.current-library-id >= 0;
-                            clicked => {
-                                root.library-properties();
+                        padding: 4px;
+                        spacing: 2px;
+                        for tab[index] in root.open-tabs: Rectangle {
+                            height: 28px;
+                            min-width: 80px;
+                            background: index == root.current-tab-index ? #fff : #d0d0d0;
+                            border-width: 1px;
+                            border-color: #bbb;
+                            HorizontalBox {
+                                padding: 6px;
+                                TouchArea {
+                                    Text {
+                                        text: tab.title;
+                                        font-size: 12px;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                    clicked => { root.tab-select(index); }
+                                }
+                                Rectangle { width: 4px; }
+                                TouchArea {
+                                    width: 18px;
+                                    height: 18px;
+                                    Text {
+                                        text: "×";
+                                        font-size: 14px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    clicked => { root.tab-close(index); }
+                                }
                             }
                         }
-                        Button {
-                            text: "Delete";
-                            enabled: root.current-library-id >= 0;
-                            clicked => {
-                                root.library-delete();
+                    }
+                }
+                // Tab content area
+                Rectangle {
+                    background: white;
+                    border-width: 1px;
+                    border-color: #ddd;
+                    VerticalBox {
+                        if root.open-tabs.length == 0: VerticalBox {
+                            padding: 40px;
+                            alignment: center;
+                            Text {
+                                text: root.tr-welcome-title;
+                                font-size: 22px;
+                                font-weight: 700;
+                            }
+                            Rectangle { height: 12px; }
+                            Text {
+                                text: root.tr-welcome-desc;
+                                font-size: 14px;
+                            }
+                            Rectangle { height: 24px; }
+                            HorizontalBox {
+                                spacing: 10px;
+                                Button {
+                                    text: root.tr-new-library;
+                                    clicked => { root.file-new-library(); }
+                                }
+                                Button {
+                                    text: root.tr-open-library;
+                                    clicked => { root.file-open-library(); }
+                                }
+                            }
+                        }
+                        if root.open-tabs.length > 0 && root.current-tab-index >= 0: VerticalBox {
+                            padding: 8px;
+                            // View mode selector for current tab
+                            HorizontalBox {
+                                spacing: 8px;
+                                padding-bottom: 8px;
+                                Button {
+                                    text: root.tr-table;
+                                    clicked => { root.tab-set-view-mode(root.current-tab-index, "table"); }
+                                }
+                                Button {
+                                    text: root.tr-diagram;
+                                    clicked => { root.tab-set-view-mode(root.current-tab-index, "diagram"); }
+                                }
+                                Button {
+                                    text: root.tr-table-and-diagram;
+                                    clicked => { root.tab-set-view-mode(root.current-tab-index, "both"); }
+                                }
+                            }
+                            Rectangle {
+                                height: 100%;
+                                background: #fafafa;
+                                VerticalBox {
+                                    padding: 16px;
+                                    Text {
+                                        text: root.current-tab-view-mode == "table" ? (root.tr-table + " — " + root.current-tab-title) : (root.current-tab-view-mode == "diagram" ? (root.tr-diagram + " — " + root.current-tab-title) : (root.tr-table-and-diagram + " — " + root.current-tab-title));
+                                        font-size: 14px;
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // Main content
-            VerticalBox {
-                padding: 20px;
-                Rectangle {
-                    background: white;
-                    height: 100%;
-                    border-width: 1px;
-                    border-color: #ddd;
-                    VerticalBox {
-                        padding: 20px;
-                        Text {
-                            text: root.tr-welcome-title;
-                            font-size: 24px;
-                            font-weight: 700;
-                        }
-                        Rectangle { height: 20px; }
-                        Text {
-                            text: root.tr-welcome-desc;
-                            font-size: 14px;
-                        }
-                        Rectangle { height: 30px; }
-                        HorizontalBox {
-                            spacing: 10px;
-                            Button {
-                                text: root.tr-new-library;
-                                clicked => { root.file-new-library(); }
-                            }
-                            Button {
-                                text: root.tr-open-library;
-                                clicked => { root.file-open-library(); }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }

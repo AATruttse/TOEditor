@@ -3,7 +3,7 @@
 slint::include_modules!();
 
 use anyhow::Result;
-use slint::{ComponentHandle, ModelRc, VecModel, Weak, SharedString};
+use slint::{ComponentHandle, Model, ModelRc, VecModel, Weak, SharedString};
 use crate::i18n::{Language, TranslationManager};
 use crate::models::Library;
 use crate::services::LibraryService;
@@ -336,6 +336,11 @@ fn setup_callbacks_with_state(
     state: Rc<RefCell<AppState>>,
 ) -> Result<()> {
     let weak_window = window.as_weak();
+
+    // Tabs and formations models
+    let open_tabs_model = Rc::new(VecModel::from(vec![]));
+    window.set_open_tabs(ModelRc::new(open_tabs_model.clone()));
+    window.set_formations(ModelRc::new(VecModel::from(vec![])));
     
     // Language switching callback - MAIN callback with parameter
     // IMPORTANT: This must be registered BEFORE the window is shown
@@ -573,6 +578,78 @@ fn setup_callbacks_with_state(
         // TODO: Show dialog to select library
     });
     
+    // Sidebar toggles
+    let weak_window = window.as_weak();
+    window.on_toggle_libraries_sidebar(move || {
+        if let Some(w) = weak_window.upgrade() {
+            w.set_libraries_sidebar_expanded(!w.get_libraries_sidebar_expanded());
+        }
+    });
+    let weak_window = window.as_weak();
+    window.on_toggle_formations_sidebar(move || {
+        if let Some(w) = weak_window.upgrade() {
+            w.set_formations_sidebar_expanded(!w.get_formations_sidebar_expanded());
+        }
+    });
+
+    // Library context menu (right-click): show LibraryContextMenu window
+    let state_clone = state.clone();
+    let weak_window = window.as_weak();
+    window.on_library_right_clicked(move |library_id, _x, _y| {
+        let lib_id = library_id;
+        let menu = match LibraryContextMenu::new() {
+            Ok(m) => m,
+            Err(_) => return,
+        };
+        menu.set_library_id(lib_id);
+        let weak_menu1 = menu.as_weak();
+        let weak_menu2 = weak_menu1.clone();
+        let weak_menu3 = weak_menu1.clone();
+        let weak_menu4 = weak_menu1.clone();
+        let state_c1 = state_clone.clone();
+        let state_c2 = state_clone.clone();
+        let state_c3 = state_clone.clone();
+        let state_c4 = state_clone.clone();
+        let weak_win1 = weak_window.clone();
+        let weak_win2 = weak_window.clone();
+        let weak_win3 = weak_window.clone();
+        let weak_win4 = weak_window.clone();
+        menu.on_properties(move || {
+            if let Some(m) = weak_menu1.upgrade() {
+                m.hide().ok();
+            }
+            if let Some(w) = weak_win1.upgrade() {
+                select_library_if_needed(state_c1.clone(), &w, lib_id);
+                show_library_dialog_for_edit(&w, lib_id, state_c1.clone());
+            }
+        });
+        menu.on_export_library(move || {
+            if let Some(m) = weak_menu2.upgrade() {
+                m.hide().ok();
+            }
+            if let Some(w) = weak_win2.upgrade() {
+                select_library_if_needed(state_c2.clone(), &w, lib_id);
+                w.invoke_file_export_library();
+            }
+        });
+        menu.on_history(move || {
+            if let Some(m) = weak_menu3.upgrade() {
+                m.hide().ok();
+            }
+            eprintln!("[DEBUG] Library > View history");
+        });
+        menu.on_delete_library(move || {
+            if let Some(m) = weak_menu4.upgrade() {
+                m.hide().ok();
+            }
+            if let Some(w) = weak_win4.upgrade() {
+                select_library_if_needed(state_c4.clone(), &w, lib_id);
+                w.invoke_library_delete();
+            }
+        });
+        menu.show().ok();
+    });
+
     // Library selection callback
     let state_clone = state.clone();
     let weak_window = window.as_weak();
@@ -600,10 +677,82 @@ fn setup_callbacks_with_state(
                         if let Some(window) = weak_window.upgrade() {
                             window.set_current_library_name(lib.name.clone().into());
                             window.set_current_library_id(library_id);
+                            refresh_formations_list(&window);
                         }
                     }
                     Err(e) => eprintln!("[ERROR] Failed to load library: {}", e),
                     _ => {}
+                }
+            }
+        }
+    });
+
+    // Formation open (add tab)
+    let tabs1 = open_tabs_model.clone();
+    let weak_win_tabs = window.as_weak();
+    window.on_formation_open(move |formation_id| {
+        let title = format!("Formation {}", formation_id);
+        let tab = FormationTab {
+            id: formation_id,
+            title: title.clone().into(),
+            view_mode: "table".into(),
+        };
+        tabs1.push(tab);
+        let idx = tabs1.row_count() - 1;
+        if let Some(w) = weak_win_tabs.upgrade() {
+            w.set_current_tab_index(idx as i32);
+            w.set_current_tab_title(title.into());
+            w.set_current_tab_view_mode("table".into());
+        }
+    });
+
+    // Tab select / close / set view mode
+    let tabs2 = open_tabs_model.clone();
+    let weak_win_tabs2 = window.as_weak();
+    window.on_tab_select(move |index| {
+        if let Some(w) = weak_win_tabs2.upgrade() {
+            w.set_current_tab_index(index);
+            if index >= 0 && (index as usize) < tabs2.row_count() {
+                if let Some(row) = tabs2.row_data(index as usize) {
+                    w.set_current_tab_title(row.title.clone());
+                    w.set_current_tab_view_mode(row.view_mode.clone());
+                }
+            }
+        }
+    });
+    let tabs3 = open_tabs_model.clone();
+    let weak_win_tabs3 = window.as_weak();
+    window.on_tab_close(move |index| {
+        if index >= 0 && (index as usize) < tabs3.row_count() {
+            tabs3.remove(index as usize);
+            if let Some(w) = weak_win_tabs3.upgrade() {
+                let count = tabs3.row_count();
+                if count == 0 {
+                    w.set_current_tab_index(-1);
+                    w.set_current_tab_title("".into());
+                    w.set_current_tab_view_mode("table".into());
+                } else {
+                    let new_idx = (index as usize).min(count.saturating_sub(1));
+                    w.set_current_tab_index(new_idx as i32);
+                    if let Some(row) = tabs3.row_data(new_idx) {
+                        w.set_current_tab_title(row.title.clone());
+                        w.set_current_tab_view_mode(row.view_mode.clone());
+                    }
+                }
+            }
+        }
+    });
+    let tabs4 = open_tabs_model.clone();
+    let weak_win_tabs4 = window.as_weak();
+    window.on_tab_set_view_mode(move |index, mode| {
+        if index >= 0 && (index as usize) < tabs4.row_count() {
+            if let Some(mut row) = tabs4.row_data(index as usize) {
+                row.view_mode = mode.clone();
+                tabs4.set_row_data(index as usize, row);
+            }
+            if let Some(w) = weak_win_tabs4.upgrade() {
+                if w.get_current_tab_index() == index {
+                    w.set_current_tab_view_mode(mode);
                 }
             }
         }
@@ -949,6 +1098,37 @@ fn show_library_dialog_for_edit(window: &MainWindow, library_id: i32, state: Rc<
     });
     
     dialog.show().unwrap_or_default();
+}
+
+/// Ensure the given library is loaded as current; select it in UI if needed.
+fn select_library_if_needed(state: Rc<RefCell<AppState>>, window: &MainWindow, library_id: i32) {
+    let need_load = {
+        let st = state.borrow();
+        st.current_library.as_ref().and_then(|l| l.id) != Some(library_id as i64)
+    };
+    if need_load {
+        if let Some(ref db) = state.borrow().database {
+            let svc = LibraryService::new(db.conn());
+            if let Ok(Some(lib)) = svc.get_library(library_id as i64) {
+                state.borrow_mut().current_library = Some(lib.clone());
+                window.set_current_library_name(lib.name.clone().into());
+                window.set_current_library_id(library_id);
+            }
+        }
+    }
+}
+
+/// Refresh formations list in the UI (placeholder until we have real formation tree).
+fn refresh_formations_list(window: &MainWindow) {
+    // Placeholder: one root formation so user can open a tab
+    let formations = vec![
+        FormationTreeItem {
+            id: 1,
+            name: "Root formation".into(),
+            depth: 0,
+        },
+    ];
+    window.set_formations(ModelRc::new(VecModel::from(formations)));
 }
 
 /// Refresh libraries list in the UI
