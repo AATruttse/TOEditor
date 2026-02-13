@@ -42,10 +42,7 @@ pub fn import_json_with_versions(path: &Path) -> Result<(Library, Option<Vec<ser
 }
 
 /// Import library from YAML file
-pub fn import_yaml(path: &Path) -> Result<Library> {
-    use yaml_rust::YamlLoader;
-    let content = std::fs::read_to_string(path)?;
-    let docs = YamlLoader::load_from_str(&content)?;
+pub fn import_yaml(_path: &Path) -> Result<Library> {
     // TODO: Implement YAML parsing to Library
     anyhow::bail!("YAML import not yet implemented")
 }

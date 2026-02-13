@@ -423,7 +423,6 @@ fn setup_callbacks_with_state(
                 window.invoke_switch_language(lang_code.clone());
                 
                 // Also manually trigger the logic as fallback
-                let lang = Language::from_code("en");
                 let mut settings = crate::config::Settings::load().unwrap_or_default();
                 settings.language = "en".to_string();
                 let _ = settings.save();
@@ -451,7 +450,6 @@ fn setup_callbacks_with_state(
                 window.invoke_switch_language(lang_code.clone());
                 
                 // Also manually trigger the logic as fallback
-                let lang = Language::from_code("ru");
                 let mut settings = crate::config::Settings::load().unwrap_or_default();
                 settings.language = "ru".to_string();
                 let _ = settings.save();
@@ -481,7 +479,6 @@ fn setup_callbacks_with_state(
     });
     
     // Library management handlers
-    let state_clone = state.clone();
     let weak_window = window.as_weak();
     window.on_file_new_library(move || {
         eprintln!("[DEBUG] File > New Library");
@@ -632,11 +629,9 @@ fn setup_callbacks_with_state(
         let weak_menu4 = weak_menu1.clone();
         let state_c1 = state_clone.clone();
         let state_c2 = state_clone.clone();
-        let state_c3 = state_clone.clone();
         let state_c4 = state_clone.clone();
         let weak_win1 = weak_window.clone();
         let weak_win2 = weak_window.clone();
-        let weak_win3 = weak_window.clone();
         let weak_win4 = weak_window.clone();
         menu.on_properties(move || {
             if let Some(m) = weak_menu1.upgrade() {
@@ -829,7 +824,7 @@ fn setup_callbacks_with_state(
         // TODO: Show file dialog to import JSON
         // For now, demonstrate import from a test file
         let state = state_clone.borrow();
-        if let Some(ref db) = state.database {
+        if state.database.is_some() {
             // Example: import from temp file
             eprintln!("[INFO] Import functionality - TODO: implement file dialog");
         }
@@ -1279,7 +1274,6 @@ fn init_toolbar(window: &MainWindow) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::i18n::Language;
 
     #[test]

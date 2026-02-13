@@ -1,8 +1,6 @@
 //! Tests for configuration and settings
 
 use toeditor::config::Settings;
-use tempfile::TempDir;
-use std::fs;
 use std::path::PathBuf;
 
 #[test]

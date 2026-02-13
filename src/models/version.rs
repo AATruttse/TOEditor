@@ -1,7 +1,6 @@
 //! Version control and snapshot management
 
 use serde::{Deserialize, Serialize};
-use crate::models::Library;
 
 /// Trait for versioned entities
 pub trait Versioned {
