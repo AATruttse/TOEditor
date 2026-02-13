@@ -22,7 +22,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             symbol_style: "NATO".to_string(),
-            color_scheme: "default".to_string(),
+            color_scheme: "light".to_string(),
             language: "en".to_string(),
             database_path: None,
         }

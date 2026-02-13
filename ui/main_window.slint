@@ -1,4 +1,4 @@
-import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
 
 export component LibraryDialog inherits Window {
     width: 500px;
@@ -34,7 +34,7 @@ export component LibraryDialog inherits Window {
                 font-size: 12px;
             }
             TextInput {
-                text: root.library-name;
+                text <=> root.library-name;
             }
             
             Text {
@@ -50,7 +50,7 @@ export component LibraryDialog inherits Window {
                 font-size: 12px;
             }
             TextInput {
-                text: root.library-era;
+                text <=> root.library-era;
             }
             
             Text {
@@ -58,7 +58,7 @@ export component LibraryDialog inherits Window {
                 font-size: 12px;
             }
             TextInput {
-                text: root.library-author;
+                text <=> root.library-author;
             }
             
             Text {
@@ -66,7 +66,7 @@ export component LibraryDialog inherits Window {
                 font-size: 12px;
             }
             TextInput {
-                text: root.library-tags;
+                text <=> root.library-tags;
             }
         }
         
@@ -139,7 +139,9 @@ export component ConfirmDeleteDialog inherits Window {
 
 export component LibraryContextMenu inherits Window {
     width: 200px;
+    height: 140px;
     title: "";
+    no-frame: true;
     in-out property <int> library-id: -1;
     callback properties();
     callback export-library();
@@ -152,39 +154,39 @@ export component LibraryContextMenu inherits Window {
         border-color: #999;
         VerticalBox {
             padding: 4px;
-        TouchArea {
-            height: 28px;
-            HorizontalBox {
-                padding: 8px;
-                Text { text: "Properties…"; font-size: 12px; }
+            TouchArea {
+                height: 28px;
+                HorizontalBox {
+                    padding: 8px;
+                    Text { text: "Properties…"; font-size: 12px; }
+                }
+                clicked => { root.properties(); }
             }
-            clicked => { root.properties(); }
-        }
-        TouchArea {
-            height: 28px;
-            HorizontalBox {
-                padding: 8px;
-                Text { text: "Export…"; font-size: 12px; }
+            TouchArea {
+                height: 28px;
+                HorizontalBox {
+                    padding: 8px;
+                    Text { text: "Export…"; font-size: 12px; }
+                }
+                clicked => { root.export-library(); }
             }
-            clicked => { root.export-library(); }
-        }
-        TouchArea {
-            height: 28px;
-            HorizontalBox {
-                padding: 8px;
-                Text { text: "View history…"; font-size: 12px; }
+            TouchArea {
+                height: 28px;
+                HorizontalBox {
+                    padding: 8px;
+                    Text { text: "View history…"; font-size: 12px; }
+                }
+                clicked => { root.history(); }
             }
-            clicked => { root.history(); }
-        }
-        Rectangle { height: 2px; background: #ddd; }
-        TouchArea {
-            height: 28px;
-            HorizontalBox {
-                padding: 8px;
-                Text { text: "Delete"; font-size: 12px; }
+            Rectangle { height: 2px; background: #ddd; }
+            TouchArea {
+                height: 28px;
+                HorizontalBox {
+                    padding: 8px;
+                    Text { text: "Delete"; font-size: 12px; }
+                }
+                clicked => { root.delete-library(); }
             }
-            clicked => { root.delete-library(); }
-        }
         }
     }
 }
@@ -220,6 +222,9 @@ export component MainWindow inherits Window {
     title: root.window-title;
     preferred-width: 1200px;
     preferred-height: 800px;
+    min-width: 800px;
+    min-height: 600px;
+    background: root.color-bg-main;
 
     in-out property <[ToolbarButton]> toolbar: [];
     in-out property <string> window-title: @tr("TOEditor");
@@ -235,6 +240,31 @@ export component MainWindow inherits Window {
     in-out property <int> current-tab-index: -1;
     in-out property <string> current-tab-title: "";
     in-out property <string> current-tab-view-mode: "table";
+    
+    // Theme properties
+    in-out property <string> theme: "light"; // "light" or "dark"
+    
+    // Color theme variables (light theme - Variant #2, dark theme - wet asphalt)
+    property <color> color-bg-main: root.theme == "dark" ? #34495e : #f5f5f5;
+    property <color> color-bg-toolbar: root.theme == "dark" ? #3d566e : #e8e8e8;
+    property <color> color-bg-sidebar: root.theme == "dark" ? #3d566e : #f0f0f0;
+    property <color> color-bg-sidebar-alt: root.theme == "dark" ? #465a6f : #e8e8e8;
+    property <color> color-bg-content: root.theme == "dark" ? #34495e : #ffffff;
+    property <color> color-bg-list: root.theme == "dark" ? #3d566e : #ffffff;
+    property <color> color-bg-tab-active: root.theme == "dark" ? #3d566e : #ffffff;
+    property <color> color-bg-tab-inactive: root.theme == "dark" ? #465a6f : #d0d0d0;
+    property <color> color-bg-selected: root.theme == "dark" ? #4a6fa5 : #e0e0e0;
+    property <color> color-bg-hover: root.theme == "dark" ? #465a6f : #f0f0f0;
+    
+    property <color> color-text-primary: root.theme == "dark" ? #ecf0f1 : #1f2937;
+    property <color> color-text-secondary: root.theme == "dark" ? #bdc3c7 : #6b7280;
+    
+    property <color> color-accent: root.theme == "dark" ? #3498db : #2563eb;
+    property <color> color-accent-hover: root.theme == "dark" ? #5dade2 : #3b82f6;
+    
+    property <color> color-border: root.theme == "dark" ? #4a5f7a : #d1d5db;
+    property <color> color-border-light: root.theme == "dark" ? #465a6f : #e5e7eb;
+    property <color> color-separator: root.theme == "dark" ? #4a5f7a : #bbb;
 
     // Strings set from Rust so they update when language changes
     in-out property <string> tr-new-library: "New Library";
@@ -297,6 +327,8 @@ export component MainWindow inherits Window {
     in-out property <string> tr-russia-gost: "Russia (ГОСТ РВ)";
     in-out property <string> tr-load-custom-set: "Load Custom Set…";
     in-out property <string> tr-color-scheme: "Color Scheme…";
+    in-out property <string> tr-light: "Light";
+    in-out property <string> tr-dark: "Dark";
     in-out property <string> tr-show-equipment-images: "Show Equipment Images";
     in-out property <string> tr-zoom: "Zoom";
     in-out property <string> tr-zoom-in: "Zoom In";
@@ -378,6 +410,7 @@ export component MainWindow inherits Window {
     callback view-symbols-russia();
     callback view-load-symbols();
     callback view-color-scheme();
+    callback switch-theme(string); // "light" or "dark"
     callback view-show-images();
     callback view-zoom-in();
     callback view-zoom-out();
@@ -402,7 +435,7 @@ export component MainWindow inherits Window {
 
     // Library selection and context menu
     callback library-selected(int);
-    callback library-right-clicked(int, float, float);
+    callback library-right-clicked(int, int);
     callback toggle-libraries-sidebar();
     callback toggle-formations-sidebar();
     // Formations tree
@@ -642,9 +675,16 @@ export component MainWindow inherits Window {
                     activated => { root.view-load-symbols(); }
                 }
             }
-            MenuItem {
+            Menu {
                 title: root.tr-color-scheme;
-                activated => { root.view-color-scheme(); }
+                MenuItem {
+                    title: root.tr-light;
+                    activated => { root.switch-theme("light"); }
+                }
+                MenuItem {
+                    title: root.tr-dark;
+                    activated => { root.switch-theme("dark"); }
+                }
             }
             MenuItem {
                 title: root.tr-show-equipment-images;
@@ -724,25 +764,21 @@ export component MainWindow inherits Window {
         // Toolbar
         Rectangle {
             height: 40px;
-            background: #e8e8e8;
+            background: root.color-bg-toolbar;
             HorizontalBox {
                 padding: 5px;
                 spacing: 5px;
-                Button {
-                    text: root.tr-new-library;
-                    clicked => { root.file-new-library(); }
-                }
-                Button {
-                    text: root.tr-open-library;
-                    clicked => { root.file-open-library(); }
-                }
                 Button {
                     text: root.tr-save-library;
                     enabled: false;
                     clicked => { root.file-save-library(); }
                 }
-                Rectangle { width: 2px; background: #bbb; }
-                Text { text: root.tr-language; vertical-alignment: center; }
+                Rectangle { width: 2px; background: root.color-separator; }
+                Text { 
+                    text: root.tr-language; 
+                    vertical-alignment: center;
+                    color: root.color-text-primary;
+                }
                 Button {
                     text: "EN";
                     clicked => {
@@ -765,10 +801,10 @@ export component MainWindow inherits Window {
             // === Left: Collapsible Libraries sidebar ===
             Rectangle {
                 width: root.libraries-sidebar-expanded ? 220px : 28px;
-                background: #f0f0f0;
+                background: root.color-bg-sidebar;
                 border-width: 1px;
-                border-color: #ccc;
-                HorizontalBox {
+                border-color: root.color-border;
+                VerticalBox {
                     if root.libraries-sidebar-expanded: VerticalBox {
                         padding: 8px;
                         HorizontalBox {
@@ -777,14 +813,15 @@ export component MainWindow inherits Window {
                                 font-size: 14px;
                                 font-weight: 700;
                                 vertical-alignment: center;
+                                color: root.color-text-primary;
                             }
-                            Rectangle { width: 5px; }
-                            touch-toggle := TouchArea {
-                                width: 24px;
-                                height: 24px;
+                            Rectangle { width: 1px; }
+                            TouchArea {
+                                width: 20px;
+                                height: 20px;
                                 Text {
                                     text: "◀";
-                                    font-size: 12px;
+                                    font-size: 11px;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
                                 }
@@ -793,35 +830,41 @@ export component MainWindow inherits Window {
                         }
                         Rectangle { height: 8px; }
                         Rectangle {
-                            background: white;
-                            min-height: 200px;
+                            background: root.color-bg-list;
                             border-width: 1px;
-                            border-color: #ddd;
-                            VerticalBox {
-                                for library[index] in root.libraries: Rectangle {
-                                    height: 28px;
-                                    background: library.id == root.current-library-id ? #e0e0e0 : #ffffff;
-                                    HorizontalBox {
-                                        padding: 4px;
-                                        Text {
-                                            text: library.name;
-                                            font-size: 12px;
-                                            overflow: elide;
-                                        }
-                                    }
-                                    touch-lib := TouchArea {
-                                        clicked => {
-                                            root.library-selected(library.id);
-                                        }
-                                        pointer-event(event) => {
-                                            if (event.button == PointerEventButton.right && event.kind == PointerEventKind.down) {
-                                                root.library-right-clicked(library.id, 0, 0);
+                            border-color: root.color-border-light;
+                            ScrollView {
+                                Rectangle {
+                                    background: root.color-bg-list;
+                                    VerticalBox {
+                                        for library[index] in root.libraries: Rectangle {
+                                            height: 28px;
+                                            background: library.id == root.current-library-id ? root.color-bg-selected : root.color-bg-list;
+                                            HorizontalBox {
+                                                padding: 4px;
+                                                Text {
+                                                    text: library.name;
+                                                    font-size: 12px;
+                                                    overflow: elide;
+                                                    color: root.color-text-primary;
+                                                }
+                                            }
+                                            touch-lib := TouchArea {
+                                                clicked => {
+                                                    root.library-selected(library.id);
+                                                }
+                                                pointer-event(event) => {
+                                                    if (event.button == PointerEventButton.right && event.kind == PointerEventKind.down) {
+                                                        root.library-right-clicked(library.id, index);
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                        Rectangle { }
                     }
                     if !root.libraries-sidebar-expanded: VerticalBox {
                         padding: 8px;
@@ -836,6 +879,7 @@ export component MainWindow inherits Window {
                             }
                             clicked => { root.toggle-libraries-sidebar(); }
                         }
+                        Rectangle { }
                     }
                 }
             }
@@ -843,9 +887,9 @@ export component MainWindow inherits Window {
             // === Collapsible Formations sidebar (only when library open) ===
             if root.current-library-id >= 0: Rectangle {
                 width: root.formations-sidebar-expanded ? 200px : 28px;
-                background: #e8e8e8;
+                background: root.color-bg-sidebar-alt;
                 border-width: 1px;
-                border-color: #ccc;
+                border-color: root.color-border;
                 HorizontalBox {
                     if root.formations-sidebar-expanded: VerticalBox {
                         padding: 8px;
@@ -855,14 +899,15 @@ export component MainWindow inherits Window {
                                 font-size: 14px;
                                 font-weight: 700;
                                 vertical-alignment: center;
+                                color: root.color-text-primary;
                             }
-                            Rectangle { width: 5px; }
+                            Rectangle { width: 1px; }
                             TouchArea {
-                                width: 24px;
-                                height: 24px;
+                                width: 20px;
+                                height: 20px;
                                 Text {
                                     text: "◀";
-                                    font-size: 12px;
+                                    font-size: 11px;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
                                 }
@@ -871,39 +916,46 @@ export component MainWindow inherits Window {
                         }
                         Rectangle { height: 8px; }
                         Rectangle {
-                            background: white;
-                            min-height: 200px;
+                            background: root.color-bg-list;
                             border-width: 1px;
-                            border-color: #ddd;
-                            VerticalBox {
-                                for formation[index] in root.formations: Rectangle {
-                                    height: 26px;
-                                    HorizontalBox {
-                                        padding-left: formation.depth * 12px + 4px;
-                                        padding-top: 4px;
-                                        padding-bottom: 4px;
-                                        Text {
-                                            text: formation.name;
-                                            font-size: 12px;
-                                            overflow: elide;
+                            border-color: root.color-border-light;
+                            ScrollView {
+                                Rectangle {
+                                    background: root.color-bg-list;
+                                    VerticalBox {
+                                        for formation[index] in root.formations: Rectangle {
+                                            height: 26px;
+                                            HorizontalBox {
+                                                padding-left: formation.depth * 12px + 4px;
+                                                padding-top: 4px;
+                                                padding-bottom: 4px;
+                                                Text {
+                                                    text: formation.name;
+                                                    font-size: 12px;
+                                                    overflow: elide;
+                                                    color: root.color-text-primary;
+                                                }
+                                            }
+                                            touch-form := TouchArea {
+                                                clicked => {
+                                                    root.formation-open(formation.id);
+                                                }
+                                            }
                                         }
-                                    }
-                                    touch-form := TouchArea {
-                                        clicked => {
-                                            root.formation-open(formation.id);
+                                        if root.formations.length == 0: Rectangle {
+                                            height: 60px;
+                                            Text {
+                                                text: root.tr-welcome-desc;
+                                                font-size: 11px;
+                                                wrap: word-wrap;
+                                                color: root.color-text-secondary;
+                                            }
                                         }
-                                    }
-                                }
-                                if root.formations.length == 0: Rectangle {
-                                    height: 60px;
-                                    Text {
-                                        text: root.tr-welcome-desc;
-                                        font-size: 11px;
-                                        wrap: word-wrap;
                                     }
                                 }
                             }
                         }
+                        Rectangle { }
                     }
                     if !root.formations-sidebar-expanded: VerticalBox {
                         padding: 8px;
@@ -918,6 +970,7 @@ export component MainWindow inherits Window {
                             }
                             clicked => { root.toggle-formations-sidebar(); }
                         }
+                        Rectangle { }
                     }
                 }
             }
@@ -927,9 +980,9 @@ export component MainWindow inherits Window {
                 // Tab bar
                 Rectangle {
                     height: 32px;
-                    background: #e0e0e0;
+                    background: root.color-bg-toolbar;
                     border-width: 1px;
-                    border-color: #bbb;
+                    border-color: root.color-border;
                     HorizontalBox {
                         padding: 4px;
                         spacing: 2px;
@@ -947,6 +1000,7 @@ export component MainWindow inherits Window {
                                         font-size: 12px;
                                         overflow: elide;
                                         vertical-alignment: center;
+                                        color: root.color-text-primary;
                                     }
                                     clicked => { root.tab-select(index); }
                                 }
@@ -968,10 +1022,11 @@ export component MainWindow inherits Window {
                 }
                 // Tab content area
                 Rectangle {
-                    background: white;
+                    background: root.color-bg-content;
                     border-width: 1px;
-                    border-color: #ddd;
+                    border-color: root.color-border-light;
                     VerticalBox {
+                        Rectangle { }
                         if root.open-tabs.length == 0: VerticalBox {
                             padding: 40px;
                             alignment: center;
@@ -979,23 +1034,13 @@ export component MainWindow inherits Window {
                                 text: root.tr-welcome-title;
                                 font-size: 22px;
                                 font-weight: 700;
+                                color: root.color-text-primary;
                             }
                             Rectangle { height: 12px; }
                             Text {
                                 text: root.tr-welcome-desc;
                                 font-size: 14px;
-                            }
-                            Rectangle { height: 24px; }
-                            HorizontalBox {
-                                spacing: 10px;
-                                Button {
-                                    text: root.tr-new-library;
-                                    clicked => { root.file-new-library(); }
-                                }
-                                Button {
-                                    text: root.tr-open-library;
-                                    clicked => { root.file-open-library(); }
-                                }
+                                color: root.color-text-secondary;
                             }
                         }
                         if root.open-tabs.length > 0 && root.current-tab-index >= 0: VerticalBox {
@@ -1018,13 +1063,13 @@ export component MainWindow inherits Window {
                                 }
                             }
                             Rectangle {
-                                height: 100%;
-                                background: #fafafa;
+                                background: root.color-bg-content;
                                 VerticalBox {
                                     padding: 16px;
                                     Text {
                                         text: root.current-tab-view-mode == "table" ? (root.tr-table + " — " + root.current-tab-title) : (root.current-tab-view-mode == "diagram" ? (root.tr-diagram + " — " + root.current-tab-title) : (root.tr-table-and-diagram + " — " + root.current-tab-title));
                                         font-size: 14px;
+                                        color: root.color-text-primary;
                                     }
                                 }
                             }

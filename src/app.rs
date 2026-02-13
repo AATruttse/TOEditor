@@ -167,6 +167,8 @@ fn apply_ui_translations(window: &MainWindow, lang: &str) {
     window.set_tr_russia_gost(ui_tr(lang, "Russia (ГОСТ РВ)").into());
     window.set_tr_load_custom_set(ui_tr(lang, "Load Custom Set…").into());
     window.set_tr_color_scheme(ui_tr(lang, "Color Scheme…").into());
+    window.set_tr_light(ui_tr(lang, "Light").into());
+    window.set_tr_dark(ui_tr(lang, "Dark").into());
     window.set_tr_show_equipment_images(ui_tr(lang, "Show Equipment Images").into());
     window.set_tr_zoom(ui_tr(lang, "Zoom").into());
     window.set_tr_zoom_in(ui_tr(lang, "Zoom In").into());
@@ -250,6 +252,11 @@ impl AppMainWindow {
             current_library: None,
         }));
         
+        // Set initial theme from settings
+        let theme = if settings.color_scheme == "dark" { "dark" } else { "light" };
+        window.set_theme(theme.into());
+        eprintln!("[INIT] Initial theme set to: {}", theme);
+        
         // Set up UI callbacks FIRST, before any other initialization
         eprintln!("[INIT] Setting up callbacks...");
         setup_callbacks_with_state(&window, &mut translation_manager, &mut settings, state.clone())?;
@@ -332,7 +339,7 @@ impl AppMainWindow {
 fn setup_callbacks_with_state(
     window: &MainWindow,
     _translation_manager: &mut TranslationManager,
-    _settings: &mut crate::config::Settings,
+    settings: &mut crate::config::Settings,
     state: Rc<RefCell<AppState>>,
 ) -> Result<()> {
     let weak_window = window.as_weak();
@@ -595,13 +602,30 @@ fn setup_callbacks_with_state(
     // Library context menu (right-click): show LibraryContextMenu window
     let state_clone = state.clone();
     let weak_window = window.as_weak();
-    window.on_library_right_clicked(move |library_id, _x, _y| {
+    window.on_library_right_clicked(move |library_id, item_index| {
         let lib_id = library_id;
         let menu = match LibraryContextMenu::new() {
             Ok(m) => m,
             Err(_) => return,
         };
         menu.set_library_id(lib_id);
+        
+        // Position menu near the clicked library item
+        // Calculate position based on item index: each item is 28px high, sidebar header is ~50px
+        use slint::ComponentHandle;
+        let menu_window = menu.window();
+        if let Some(main_window) = weak_window.upgrade() {
+            let main_window_handle = main_window.window();
+            let main_pos = main_window_handle.position();
+            // Sidebar width when expanded is 220px, libraries list starts at y ~50px (menu bar + header)
+            // Each library item is 28px high
+            let item_height = 28;
+            let sidebar_header_height = 50;
+            let menu_x = (main_pos.x + 220) as f32; // Right edge of sidebar
+            let menu_y = (main_pos.y + sidebar_header_height + (item_index * item_height)) as f32;
+            menu_window.set_position(slint::WindowPosition::Logical(slint::LogicalPosition::new(menu_x, menu_y)));
+        }
+        
         let weak_menu1 = menu.as_weak();
         let weak_menu2 = weak_menu1.clone();
         let weak_menu3 = weak_menu1.clone();
@@ -647,6 +671,7 @@ fn setup_callbacks_with_state(
                 w.invoke_library_delete();
             }
         });
+        
         menu.show().ok();
     });
 
@@ -970,7 +995,28 @@ fn setup_callbacks_with_state(
     window.on_view_symbols_nato(|| { eprintln!("[DEBUG] View > Symbols NATO"); });
     window.on_view_symbols_russia(|| { eprintln!("[DEBUG] View > Symbols Russia"); });
     window.on_view_load_symbols(|| { eprintln!("[DEBUG] View > Load Symbols"); });
-    window.on_view_color_scheme(|| { eprintln!("[DEBUG] View > Color Scheme"); });
+    // Theme switching callback
+    let weak_window = window.as_weak();
+    window.on_switch_theme(move |theme: slint::SharedString| {
+        let theme_str = theme.to_string();
+        eprintln!("[DEBUG] Switching theme to: {}", theme_str);
+        
+        if let Some(w) = weak_window.upgrade() {
+            w.set_theme(theme.clone());
+            
+            // Save theme to settings
+            let mut settings = match crate::config::Settings::load() {
+                Ok(s) => s,
+                Err(_) => crate::config::Settings::default(),
+            };
+            settings.color_scheme = theme_str.clone();
+            if let Err(e) = settings.save() {
+                eprintln!("[ERROR] Failed to save theme setting: {}", e);
+            } else {
+                eprintln!("[INFO] Theme saved: {}", theme_str);
+            }
+        }
+    });
     window.on_view_show_images(|| { eprintln!("[DEBUG] View > Show Images"); });
     window.on_view_zoom_in(|| { eprintln!("[DEBUG] View > Zoom In"); });
     window.on_view_zoom_out(|| { eprintln!("[DEBUG] View > Zoom Out"); });
@@ -1107,13 +1153,19 @@ fn select_library_if_needed(state: Rc<RefCell<AppState>>, window: &MainWindow, l
         st.current_library.as_ref().and_then(|l| l.id) != Some(library_id as i64)
     };
     if need_load {
-        if let Some(ref db) = state.borrow().database {
-            let svc = LibraryService::new(db.conn());
-            if let Ok(Some(lib)) = svc.get_library(library_id as i64) {
-                state.borrow_mut().current_library = Some(lib.clone());
-                window.set_current_library_name(lib.name.clone().into());
-                window.set_current_library_id(library_id);
+        let lib_result = {
+            let st = state.borrow();
+            if let Some(ref db) = st.database {
+                let svc = LibraryService::new(db.conn());
+                svc.get_library(library_id as i64)
+            } else {
+                return;
             }
+        };
+        if let Ok(Some(lib)) = lib_result {
+            state.borrow_mut().current_library = Some(lib.clone());
+            window.set_current_library_name(lib.name.clone().into());
+            window.set_current_library_id(library_id);
         }
     }
 }

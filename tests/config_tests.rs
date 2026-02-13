@@ -9,7 +9,7 @@ use std::path::PathBuf;
 fn test_default_settings() {
     let settings = Settings::default();
     assert_eq!(settings.symbol_style, "NATO");
-    assert_eq!(settings.color_scheme, "default");
+    assert_eq!(settings.color_scheme, "light");
     assert_eq!(settings.language, "en");
     assert!(settings.database_path.is_none());
 }
