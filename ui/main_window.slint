@@ -137,6 +137,331 @@ export component ConfirmDeleteDialog inherits Window {
     }
 }
 
+export struct BranchRow {
+    id: int,
+    name-ru: string,
+    name-en: string,
+}
+
+export struct FormationLevelRow {
+    id: int,
+    name-ru: string,
+    name-en: string,
+    standard-level-ordinal: int,
+}
+
+export struct OtherLibraryItem {
+    id: int,
+    name: string,
+}
+
+export component FormationLevelsEditor inherits Window {
+    width: 640px;
+    height: 480px;
+    title: root.tr-formation-levels-title;
+    
+    in-out property <int> library-id: -1;
+    in-out property <string> library-name: "";
+    in-out property <[FormationLevelRow]> custom-levels: [];
+    in-out property <int> current-index: -1;
+    in-out property <string> current-name-ru: "";
+    in-out property <string> current-name-en: "";
+    in-out property <int> current-standard-ordinal: 0;
+    in-out property <[string]> standard-level-names: [];
+    
+    in-out property <string> tr-formation-levels-title: "Formation levels";
+    in-out property <string> tr-name-russian: "Name (Russian)";
+    in-out property <string> tr-name-english: "Name (English)";
+    in-out property <string> tr-corresponds-to: "Corresponds to";
+    in-out property <string> tr-add-level: "Add level";
+    in-out property <string> tr-delete-level: "Delete level";
+    in-out property <string> tr-export: "Export…";
+    in-out property <string> tr-import: "Import…";
+    in-out property <string> tr-copy-from-library: "Copy from library";
+    in-out property <string> tr-close: "Close";
+    in-out property <[OtherLibraryItem]> other-libraries: [];
+    in-out property <int> copy-source-index: -1;
+    
+    callback add-level();
+    callback delete-level();
+    callback export-levels();
+    callback import-levels();
+    callback copy-from-library();
+    callback close-editor();
+    callback selection-changed(int);
+    callback form-changed(string, string, int);
+    
+    HorizontalBox {
+        Rectangle {
+            width: 220px;
+            background: #f5f5f5;
+            border-width: 1px;
+            border-color: #ddd;
+            VerticalBox {
+                padding: 8px;
+                spacing: 4px;
+                Text {
+                    text: root.tr-formation-levels-title;
+                    font-size: 14px;
+                    font-weight: 700;
+                }
+                Rectangle { height: 8px; }
+                ScrollView {
+                    VerticalBox {
+                        for level[index] in root.custom-levels: Rectangle {
+                            background: index == root.current-index ? #e0e0e0 : #fff;
+                            border-width: 1px;
+                            border-color: #ddd;
+                            min-height: 32px;
+                            HorizontalBox {
+                                padding: 6px;
+                                Text {
+                                    text: level.name-ru;
+                                    font-size: 12px;
+                                    overflow: elide;
+                                }
+                            }
+                            TouchArea {
+                                clicked => { root.selection-changed(index); }
+                            }
+                        }
+                    }
+                }
+                Rectangle { height: 8px; }
+                HorizontalBox {
+                    spacing: 6px;
+                    Button {
+                        min-width: 90px;
+                        text: root.tr-add-level;
+                        clicked => { root.add-level(); }
+                    }
+                    Button {
+                        min-width: 90px;
+                        text: root.tr-delete-level;
+                        clicked => { root.delete-level(); }
+                    }
+                }
+            }
+        }
+        VerticalBox {
+            padding: 16px;
+            spacing: 12px;
+            Text {
+                text: root.tr-name-russian;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            TextInput {
+                text <=> root.current-name-ru;
+            }
+            Text {
+                text: root.tr-name-english;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            TextInput {
+                text <=> root.current-name-en;
+            }
+            Text {
+                text: root.tr-corresponds-to;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            ScrollView {
+                max-height: 200px;
+                VerticalBox {
+                    for standard[index] in root.standard-level-names: Rectangle {
+                        background: index == root.current-standard-ordinal ? #d0e0ff : #f9f9f9;
+                        border-width: 1px;
+                        border-color: #ddd;
+                        min-height: 28px;
+                        HorizontalBox {
+                            padding: 6px;
+                            Text {
+                                text: standard;
+                                font-size: 12px;
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.current-standard-ordinal = index;
+                                root.form-changed(root.current-name-ru, root.current-name-en, index);
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle { }
+            Text { text: root.tr-copy-from-library; font-size: 12px; font-weight: 700; }
+            ScrollView {
+                max-height: 100px;
+                VerticalBox {
+                    for lib[index] in root.other-libraries: Rectangle {
+                        background: index == root.copy-source-index ? #d0e0ff : #f9f9f9;
+                        min-height: 24px;
+                        HorizontalBox {
+                            padding: 4px;
+                            Text { text: lib.name; font-size: 12px; }
+                        }
+                        TouchArea {
+                            clicked => { root.copy-source-index = index; }
+                        }
+                    }
+                }
+            }
+            HorizontalBox {
+                spacing: 6px;
+                Button {
+                    min-width: 100px;
+                    text: root.tr-export;
+                    clicked => { root.export-levels(); }
+                }
+                Button {
+                    min-width: 100px;
+                    text: root.tr-import;
+                    clicked => { root.import-levels(); }
+                }
+                Button {
+                    min-width: 140px;
+                    text: root.tr-copy-from-library;
+                    clicked => { root.copy-from-library(); }
+                }
+                Rectangle { }
+                Button {
+                    min-width: 80px;
+                    text: root.tr-close;
+                    clicked => { root.close-editor(); }
+                }
+            }
+        }
+    }
+}
+
+export component BranchesEditor inherits Window {
+    width: 600px;
+    height: 460px;
+    title: root.tr-branches-title;
+    
+    in-out property <int> library-id: -1;
+    in-out property <string> library-name: "";
+    in-out property <[BranchRow]> branches: [];
+    in-out property <int> current-index: -1;
+    in-out property <string> current-name-ru: "";
+    in-out property <string> current-name-en: "";
+    
+    in-out property <string> tr-branches-title: "Branches of service";
+    in-out property <string> tr-name-russian: "Name (Russian)";
+    in-out property <string> tr-name-english: "Name (English)";
+    in-out property <string> tr-add: "Add";
+    in-out property <string> tr-delete: "Delete";
+    in-out property <string> tr-export: "Export…";
+    in-out property <string> tr-import: "Import…";
+    in-out property <string> tr-copy-from-library: "Copy from library";
+    in-out property <string> tr-close: "Close";
+    in-out property <[OtherLibraryItem]> other-libraries: [];
+    in-out property <int> copy-source-index: -1;
+    
+    callback add-branch();
+    callback delete-branch();
+    callback export-branches();
+    callback import-branches();
+    callback copy-from-library();
+    callback close-editor();
+    callback selection-changed(int);
+    
+    HorizontalBox {
+        Rectangle {
+            width: 200px;
+            background: #f5f5f5;
+            border-width: 1px;
+            border-color: #ddd;
+            VerticalBox {
+                padding: 8px;
+                spacing: 4px;
+                Text { text: root.tr-branches-title; font-size: 14px; font-weight: 700; }
+                Rectangle { height: 8px; }
+                ScrollView {
+                    VerticalBox {
+                        for branch[index] in root.branches: Rectangle {
+                            background: index == root.current-index ? #e0e0e0 : #fff;
+                            border-width: 1px;
+                            border-color: #ddd;
+                            min-height: 32px;
+                            HorizontalBox {
+                                padding: 6px;
+                                Text { text: branch.name-ru; font-size: 12px; overflow: elide; }
+                            }
+                            TouchArea { clicked => { root.selection-changed(index); } }
+                        }
+                    }
+                }
+                Rectangle { height: 8px; }
+                HorizontalBox {
+                    spacing: 6px;
+                    Button {
+                        min-width: 90px;
+                        text: root.tr-add;
+                        clicked => { root.add-branch(); }
+                    }
+                    Button {
+                        min-width: 90px;
+                        text: root.tr-delete;
+                        clicked => { root.delete-branch(); }
+                    }
+                }
+            }
+        }
+        VerticalBox {
+            padding: 16px;
+            spacing: 12px;
+            Text { text: root.tr-name-russian; font-size: 12px; font-weight: 700; }
+            TextInput { text <=> root.current-name-ru; }
+            Text { text: root.tr-name-english; font-size: 12px; font-weight: 700; }
+            TextInput { text <=> root.current-name-en; }
+            Rectangle { }
+            Text { text: root.tr-copy-from-library; font-size: 12px; font-weight: 700; }
+            ScrollView {
+                max-height: 100px;
+                VerticalBox {
+                    for lib[index] in root.other-libraries: Rectangle {
+                        background: index == root.copy-source-index ? #d0e0ff : #f9f9f9;
+                        min-height: 24px;
+                        HorizontalBox {
+                            padding: 4px;
+                            Text { text: lib.name; font-size: 12px; }
+                        }
+                        TouchArea { clicked => { root.copy-source-index = index; } }
+                    }
+                }
+            }
+            HorizontalBox {
+                spacing: 6px;
+                Button {
+                    min-width: 100px;
+                    text: root.tr-export;
+                    clicked => { root.export-branches(); }
+                }
+                Button {
+                    min-width: 100px;
+                    text: root.tr-import;
+                    clicked => { root.import-branches(); }
+                }
+                Button {
+                    min-width: 140px;
+                    text: root.tr-copy-from-library;
+                    clicked => { root.copy-from-library(); }
+                }
+                Rectangle { }
+                Button {
+                    min-width: 80px;
+                    text: root.tr-close;
+                    clicked => { root.close-editor(); }
+                }
+            }
+        }
+    }
+}
+
 export component LibraryContextMenu inherits Window {
     width: 200px;
     height: 140px;
@@ -303,6 +628,8 @@ export component MainWindow inherits Window {
     in-out property <string> tr-library: "Library";
     in-out property <string> tr-positions-and-ranks-editor: "Positions and Ranks Editor…";
     in-out property <string> tr-equipment-and-vehicles-editor: "Equipment and Vehicles Editor…";
+    in-out property <string> tr-formation-levels: "Formation levels…";
+    in-out property <string> tr-branches: "Branches…";
     in-out property <string> tr-library-properties: "Library Properties…";
     in-out property <string> tr-manage-tags: "Manage Tags…";
     in-out property <string> tr-version-control: "Version Control";
@@ -376,6 +703,8 @@ export component MainWindow inherits Window {
     // Library menu callbacks
     callback library-positions-editor();
     callback library-equipment-editor();
+    callback library-formation-levels();
+    callback library-branches();
     callback library-properties();
     callback library-manage-tags();
     callback library-export-library();
@@ -561,6 +890,14 @@ export component MainWindow inherits Window {
             MenuItem {
                 title: root.tr-equipment-and-vehicles-editor;
                 activated => { root.library-equipment-editor(); }
+            }
+            MenuItem {
+                title: root.tr-formation-levels;
+                activated => { root.library-formation-levels(); }
+            }
+            MenuItem {
+                title: root.tr-branches;
+                activated => { root.library-branches(); }
             }
             MenuItem {
                 title: root.tr-library-properties;

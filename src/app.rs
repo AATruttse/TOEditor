@@ -5,10 +5,11 @@ slint::include_modules!();
 use anyhow::Result;
 use slint::{ComponentHandle, Model, ModelRc, VecModel, Weak, SharedString};
 use crate::i18n::{Language, TranslationManager};
-use crate::models::Library;
+use crate::models::{Library, StandardFormationLevel, CustomFormationLevel, Branch};
 use crate::services::LibraryService;
-use crate::export;
+use crate::export::{self, export_branches_to_path, import_branches_from_path, export_formation_levels_to_path, import_formation_levels_from_path, copy_branches_between_libraries, copy_formation_levels_between_libraries};
 use crate::db::Database;
+use crate::db::repositories::{FormationLevelRepo, BranchRepo};
 use crate::config::Settings;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -99,6 +100,20 @@ fn ui_tr(lang: &str, key: &str) -> String {
         "Delete library?" => "Удалить библиотеку?",
         "Cancel" => "Отмена",
         "Delete library \"{}\"? This will delete all versions." => "Удалить библиотеку \"{}\"? Будут удалены все версии.",
+        "Formation levels" => "Уровни формирований",
+        "Formation levels…" => "Уровни формирований…",
+        "Name (Russian)" => "Название (рус.)",
+        "Name (English)" => "Название (англ.)",
+        "Corresponds to" => "Соответствует уровню",
+        "Add level" => "Добавить уровень",
+        "Delete level" => "Удалить уровень",
+        "Export…" => "Экспорт…",
+        "Import…" => "Импорт…",
+        "Copy from library" => "Копировать из библиотеки",
+        "Close" => "Закрыть",
+        "Branches…" => "Роды войск…",
+        "Branches of service" => "Роды войск",
+        "Add" => "Добавить",
         _ => key,
     };
     s.to_string()
@@ -143,6 +158,8 @@ fn apply_ui_translations(window: &MainWindow, lang: &str) {
     window.set_tr_library(ui_tr(lang, "Library").into());
     window.set_tr_positions_and_ranks_editor(ui_tr(lang, "Positions and Ranks Editor…").into());
     window.set_tr_equipment_and_vehicles_editor(ui_tr(lang, "Equipment and Vehicles Editor…").into());
+    window.set_tr_formation_levels(ui_tr(lang, "Formation levels…").into());
+    window.set_tr_branches(ui_tr(lang, "Branches…").into());
     window.set_tr_library_properties(ui_tr(lang, "Library Properties…").into());
     window.set_tr_manage_tags(ui_tr(lang, "Manage Tags…").into());
     window.set_tr_version_control(ui_tr(lang, "Version Control").into());
@@ -868,6 +885,60 @@ fn setup_callbacks_with_state(
     window.on_library_positions_editor(|| { eprintln!("[DEBUG] Library > Positions Editor"); });
     window.on_library_equipment_editor(|| { eprintln!("[DEBUG] Library > Equipment Editor"); });
     
+    // Formation levels editor (separate window)
+    let state_formation = state.clone();
+    let weak_window_formation = window.as_weak();
+    window.on_library_formation_levels(move || {
+        let (lib_id, lib_name) = {
+            let st = state_formation.borrow();
+            match &st.current_library {
+                Some(lib) => match lib.id {
+                    Some(id) => (id, lib.name.clone()),
+                    None => {
+                        eprintln!("[WARNING] Library has no id");
+                        return;
+                    }
+                },
+                None => {
+                    eprintln!("[WARNING] No library selected");
+                    return;
+                }
+            }
+        };
+        let lang = weak_window_formation
+            .upgrade()
+            .map(|w| w.get_current_language().to_string())
+            .unwrap_or_else(|| "en".to_string());
+        show_formation_levels_editor(state_formation.clone(), lib_id, &lib_name, &lang);
+    });
+    
+    // Branches editor (separate window)
+    let state_branches = state.clone();
+    let weak_win_branches = window.as_weak();
+    window.on_library_branches(move || {
+        let (lib_id, lib_name) = {
+            let st = state_branches.borrow();
+            match &st.current_library {
+                Some(lib) => match lib.id {
+                    Some(id) => (id, lib.name.clone()),
+                    None => {
+                        eprintln!("[WARNING] Library has no id");
+                        return;
+                    }
+                },
+                None => {
+                    eprintln!("[WARNING] No library selected");
+                    return;
+                }
+            }
+        };
+        let lang = weak_win_branches
+            .upgrade()
+            .map(|w| w.get_current_language().to_string())
+            .unwrap_or_else(|| "en".to_string());
+        show_branches_editor(state_branches.clone(), lib_id, &lib_name, &lang);
+    });
+
     // Library properties/edit - show dialog
     let state_clone = state.clone();
     let weak_window = window.as_weak();
@@ -1139,6 +1210,531 @@ fn show_library_dialog_for_edit(window: &MainWindow, library_id: i32, state: Rc<
     });
     
     dialog.show().unwrap_or_default();
+}
+
+/// Open the Branches editor window for the given library.
+fn show_branches_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &str, lang: &str) {
+    use slint::ComponentHandle;
+    let (branches, other_library_items, source_library_ids) = {
+        let st = state.borrow();
+        let db = match st.database.as_ref() {
+            Some(d) => d,
+            None => {
+                eprintln!("[ERROR] Database not initialized");
+                return;
+            }
+        };
+        let branch_repo = BranchRepo::new(db.conn());
+        let mut branches = match branch_repo.list_by_library(lib_id) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("[ERROR] Failed to load branches: {}", e);
+                return;
+            }
+        };
+        if branches.is_empty() {
+            for mut b in crate::models::default_branches(lib_id) {
+                if branch_repo.create(&mut b).is_err() {
+                    break;
+                }
+            }
+            branches = branch_repo.list_by_library(lib_id).unwrap_or_default();
+        }
+        let lib_repo = crate::db::repositories::LibraryRepo::new(db.conn());
+        let all_libs = match lib_repo.list_all() {
+            Ok(l) => l,
+            Err(_) => vec![],
+        };
+        let mut other_items = Vec::new();
+        let mut source_ids = Vec::new();
+        for l in all_libs {
+            if l.id != Some(lib_id) {
+                if let Some(id) = l.id {
+                    other_items.push(OtherLibraryItem { id: id as i32, name: l.name.into() });
+                    source_ids.push(id);
+                }
+            }
+        }
+        (branches, other_items, source_ids)
+    };
+    let rows: Vec<BranchRow> = branches
+        .into_iter()
+        .map(|b| BranchRow {
+            id: b.id.unwrap_or(-1) as i32,
+            name_ru: b.name_ru.into(),
+            name_en: b.name_en.into(),
+        })
+        .collect();
+    let editor = match BranchesEditor::new() {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("[ERROR] Failed to create Branches editor: {}", e);
+            return;
+        }
+    };
+    editor.set_library_id(lib_id as i32);
+    editor.set_library_name(lib_name.into());
+    let model = Rc::new(VecModel::from(rows));
+    editor.set_branches(ModelRc::new(model.clone()));
+    editor.set_current_index(-1);
+    editor.set_current_name_ru(Default::default());
+    editor.set_current_name_en(Default::default());
+    editor.set_tr_branches_title(ui_tr(lang, "Branches of service").into());
+    editor.set_tr_name_russian(ui_tr(lang, "Name (Russian)").into());
+    editor.set_tr_name_english(ui_tr(lang, "Name (English)").into());
+    editor.set_tr_add(ui_tr(lang, "Add").into());
+    editor.set_tr_delete(ui_tr(lang, "Delete").into());
+    editor.set_tr_export(ui_tr(lang, "Export…").into());
+    editor.set_tr_import(ui_tr(lang, "Import…").into());
+    editor.set_tr_copy_from_library(ui_tr(lang, "Copy from library").into());
+    editor.set_tr_close(ui_tr(lang, "Close").into());
+    editor.set_other_libraries(ModelRc::new(VecModel::from(other_library_items)));
+    editor.set_copy_source_index(-1);
+    let state_close = state.clone();
+    let weak_editor = editor.as_weak();
+    let weak_add = weak_editor.clone();
+    let model_add = model.clone();
+    editor.on_add_branch(move || {
+        let Some(ed) = weak_add.upgrade() else { return };
+        let row = BranchRow { id: -1, name_ru: Default::default(), name_en: Default::default() };
+        model_add.insert(model_add.row_count(), row.clone());
+        ed.set_current_index(model_add.row_count() as i32 - 1);
+        ed.set_current_name_ru(row.name_ru.clone());
+        ed.set_current_name_en(row.name_en.clone());
+    });
+    let weak_del = weak_editor.clone();
+    let model_del = model.clone();
+    editor.on_delete_branch(move || {
+        let Some(ed) = weak_del.upgrade() else { return };
+        let idx = ed.get_current_index();
+        if idx >= 0 && (idx as usize) < model_del.row_count() {
+            model_del.remove(idx as usize);
+            let new_count = model_del.row_count();
+            if new_count == 0 {
+                ed.set_current_index(-1);
+                ed.set_current_name_ru(Default::default());
+                ed.set_current_name_en(Default::default());
+            } else {
+                let new_idx = (idx as usize).min(new_count - 1);
+                ed.set_current_index(new_idx as i32);
+                if let Some(r) = model_del.row_data(new_idx) {
+                    ed.set_current_name_ru(r.name_ru.clone());
+                    ed.set_current_name_en(r.name_en.clone());
+                }
+            }
+        }
+    });
+    let weak_close = weak_editor.clone();
+    let model_close = model.clone();
+    editor.on_close_editor(move || {
+        let Some(ed) = weak_close.upgrade() else { return };
+        let idx = ed.get_current_index();
+        if idx >= 0 && (idx as usize) < model_close.row_count() {
+            let ru = ed.get_current_name_ru();
+            let en = ed.get_current_name_en();
+            if let Some(r) = model_close.row_data(idx as usize) {
+                let _ = model_close.set_row_data(idx as usize, BranchRow {
+                    id: r.id,
+                    name_ru: ru,
+                    name_en: en,
+                });
+            }
+        }
+        let st = state_close.borrow();
+        if let Some(ref db) = st.database {
+            let repo = BranchRepo::new(db.conn());
+            let _ = repo.delete_by_library(lib_id);
+            for i in 0..model_close.row_count() {
+                if let Some(r) = model_close.row_data(i) {
+                    let mut b = Branch::new(lib_id, r.name_ru.to_string(), r.name_en.to_string());
+                    let _ = repo.create(&mut b);
+                }
+            }
+        }
+        let _ = ed.hide();
+    });
+    let weak_sel = weak_editor.clone();
+    let model_sel = model.clone();
+    editor.on_selection_changed(move |index| {
+        let Some(ed) = weak_sel.upgrade() else { return };
+        if index >= 0 && (index as usize) < model_sel.row_count() {
+            if let Some(r) = model_sel.row_data(index as usize) {
+                ed.set_current_name_ru(r.name_ru.clone());
+                ed.set_current_name_en(r.name_en.clone());
+            }
+        }
+    });
+    let model_exp = model.clone();
+    editor.on_export_branches(move || {
+        let branches: Vec<Branch> = (0..model_exp.row_count())
+            .filter_map(|i| model_exp.row_data(i))
+            .map(|r| Branch::new(lib_id, r.name_ru.to_string(), r.name_en.to_string()))
+            .collect();
+        if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).save_file() {
+            if let Err(e) = export_branches_to_path(path.as_path(), &branches) {
+                eprintln!("[ERROR] Export branches: {}", e);
+            }
+        }
+    });
+    let weak_imp = weak_editor.clone();
+    let model_imp = model.clone();
+    editor.on_import_branches(move || {
+        if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() {
+            match import_branches_from_path(path.as_path()) {
+                Ok(imported) => {
+                    while model_imp.row_count() > 0 {
+                        model_imp.remove(0);
+                    }
+                    for e in imported {
+                        model_imp.insert(model_imp.row_count(), BranchRow {
+                            id: -1,
+                            name_ru: e.name_ru.into(),
+                            name_en: e.name_en.into(),
+                        });
+                    }
+                    if let Some(ed) = weak_imp.upgrade() {
+                        ed.set_current_index(if model_imp.row_count() > 0 { 0 } else { -1 });
+                        if model_imp.row_count() > 0 {
+                            if let Some(r) = model_imp.row_data(0) {
+                                ed.set_current_name_ru(r.name_ru.clone());
+                                ed.set_current_name_en(r.name_en.clone());
+                            }
+                        }
+                    }
+                }
+                Err(e) => eprintln!("[ERROR] Import branches: {}", e),
+            }
+        }
+    });
+    let state_copy = state.clone();
+    let weak_copy = weak_editor.clone();
+    let model_copy = model.clone();
+    let source_ids = source_library_ids.clone();
+    editor.on_copy_from_library(move || {
+        let Some(ed) = weak_copy.upgrade() else { return };
+        let idx = ed.get_copy_source_index();
+        if idx < 0 || (idx as usize) >= source_ids.len() {
+            return;
+        }
+        let source_id = source_ids[idx as usize];
+        let st = state_copy.borrow();
+        if let Some(ref db) = st.database {
+            let branch_repo = BranchRepo::new(db.conn());
+            if let Err(e) = copy_branches_between_libraries(&branch_repo, source_id, lib_id) {
+                eprintln!("[ERROR] Copy branches: {}", e);
+                return;
+            }
+            drop(st);
+            let st2 = state_copy.borrow();
+            if let Some(ref db2) = st2.database {
+                let branch_repo2 = BranchRepo::new(db2.conn());
+                if let Ok(new_branches) = branch_repo2.list_by_library(lib_id) {
+                    while model_copy.row_count() > 0 {
+                        model_copy.remove(0);
+                    }
+                    for b in new_branches {
+                        model_copy.insert(model_copy.row_count(), BranchRow {
+                            id: b.id.unwrap_or(-1) as i32,
+                            name_ru: b.name_ru.into(),
+                            name_en: b.name_en.into(),
+                        });
+                    }
+                    ed.set_current_index(if model_copy.row_count() > 0 { 0 } else { -1 });
+                    if model_copy.row_count() > 0 {
+                        if let Some(r) = model_copy.row_data(0) {
+                            ed.set_current_name_ru(r.name_ru.clone());
+                            ed.set_current_name_en(r.name_en.clone());
+                        }
+                    }
+                }
+            }
+        }
+    });
+    editor.show().unwrap_or_default();
+}
+
+/// Open the Formation levels editor window for the given library.
+fn show_formation_levels_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &str, lang: &str) {
+    use slint::ComponentHandle;
+    let (levels, other_library_items, source_library_ids) = {
+        let st = state.borrow();
+        let db = match st.database.as_ref() {
+            Some(d) => d,
+            None => {
+                eprintln!("[ERROR] Database not initialized");
+                return;
+            }
+        };
+        let level_repo = FormationLevelRepo::new(db.conn());
+        let levels = match level_repo.list_by_library(lib_id) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("[ERROR] Failed to load formation levels: {}", e);
+                return;
+            }
+        };
+        let lib_repo = crate::db::repositories::LibraryRepo::new(db.conn());
+        let all_libs = match lib_repo.list_all() {
+            Ok(l) => l,
+            Err(_) => vec![],
+        };
+        let mut other_items = Vec::new();
+        let mut source_ids = Vec::new();
+        for l in all_libs {
+            if l.id != Some(lib_id) {
+                if let Some(id) = l.id {
+                    other_items.push(OtherLibraryItem { id: id as i32, name: l.name.into() });
+                    source_ids.push(id);
+                }
+            }
+        }
+        (levels, other_items, source_ids)
+    };
+    let rows: Vec<FormationLevelRow> = levels
+        .into_iter()
+        .map(|l| FormationLevelRow {
+            id: l.id.unwrap_or(-1) as i32,
+            name_ru: l.name_ru.into(),
+            name_en: l.name_en.into(),
+            standard_level_ordinal: l.standard_level_ordinal,
+        })
+        .collect();
+    let standard_names: Vec<SharedString> = StandardFormationLevel::all()
+        .iter()
+        .map(|s| s.name_en().into())
+        .collect();
+    let editor = match FormationLevelsEditor::new() {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("[ERROR] Failed to create Formation levels editor: {}", e);
+            return;
+        }
+    };
+    editor.set_library_id(lib_id as i32);
+    editor.set_library_name(lib_name.into());
+    editor.set_standard_level_names(ModelRc::new(VecModel::from(standard_names)));
+    let model = Rc::new(VecModel::from(rows));
+    editor.set_custom_levels(ModelRc::new(model.clone()));
+    editor.set_current_index(-1);
+    editor.set_current_name_ru(Default::default());
+    editor.set_current_name_en(Default::default());
+    editor.set_current_standard_ordinal(0);
+    editor.set_tr_formation_levels_title(ui_tr(lang, "Formation levels").into());
+    editor.set_tr_name_russian(ui_tr(lang, "Name (Russian)").into());
+    editor.set_tr_name_english(ui_tr(lang, "Name (English)").into());
+    editor.set_tr_corresponds_to(ui_tr(lang, "Corresponds to").into());
+    editor.set_tr_add_level(ui_tr(lang, "Add level").into());
+    editor.set_tr_delete_level(ui_tr(lang, "Delete level").into());
+    editor.set_tr_export(ui_tr(lang, "Export…").into());
+    editor.set_tr_import(ui_tr(lang, "Import…").into());
+    editor.set_tr_copy_from_library(ui_tr(lang, "Copy from library").into());
+    editor.set_tr_close(ui_tr(lang, "Close").into());
+    editor.set_other_libraries(ModelRc::new(VecModel::from(other_library_items)));
+    editor.set_copy_source_index(-1);
+    let state_close = state.clone();
+    let weak_editor = editor.as_weak();
+    let weak_add = weak_editor.clone();
+    let model_add = model.clone();
+    editor.on_add_level(move || {
+        let Some(ed) = weak_add.upgrade() else { return };
+        let row = FormationLevelRow {
+            id: -1,
+            name_ru: Default::default(),
+            name_en: Default::default(),
+            standard_level_ordinal: 0,
+        };
+        model_add.insert(model_add.row_count(), row.clone());
+        ed.set_current_index(model_add.row_count() as i32 - 1);
+        ed.set_current_name_ru(row.name_ru.clone());
+        ed.set_current_name_en(row.name_en.clone());
+        ed.set_current_standard_ordinal(row.standard_level_ordinal);
+    });
+    let weak_del = weak_editor.clone();
+    let model_del = model.clone();
+    editor.on_delete_level(move || {
+        let Some(ed) = weak_del.upgrade() else { return };
+        let idx = ed.get_current_index();
+        if idx >= 0 && (idx as usize) < model_del.row_count() {
+            model_del.remove(idx as usize);
+            let new_count = model_del.row_count();
+            if new_count == 0 {
+                ed.set_current_index(-1);
+                ed.set_current_name_ru(Default::default());
+                ed.set_current_name_en(Default::default());
+                ed.set_current_standard_ordinal(0);
+            } else {
+                let new_idx = (idx as usize).min(new_count - 1);
+                ed.set_current_index(new_idx as i32);
+                if let Some(r) = model_del.row_data(new_idx) {
+                    ed.set_current_name_ru(r.name_ru.clone());
+                    ed.set_current_name_en(r.name_en.clone());
+                    ed.set_current_standard_ordinal(r.standard_level_ordinal);
+                }
+            }
+        }
+    });
+    let weak_close = weak_editor.clone();
+    let model_close = model.clone();
+    editor.on_close_editor(move || {
+        let Some(ed) = weak_close.upgrade() else { return };
+        let idx = ed.get_current_index();
+        if idx >= 0 && (idx as usize) < model_close.row_count() {
+            let ru = ed.get_current_name_ru();
+            let en = ed.get_current_name_en();
+            let ord = ed.get_current_standard_ordinal();
+            if let Some(r) = model_close.row_data(idx as usize) {
+                let _ = model_close.set_row_data(idx as usize, FormationLevelRow {
+                    id: r.id,
+                    name_ru: ru,
+                    name_en: en,
+                    standard_level_ordinal: ord,
+                });
+            }
+        }
+        let st = state_close.borrow();
+        if let Some(ref db) = st.database {
+            let repo = FormationLevelRepo::new(db.conn());
+            let existing = match repo.list_by_library(lib_id) {
+                Ok(l) => l,
+                Err(_) => vec![],
+            };
+            for old in &existing {
+                if let Some(id) = old.id {
+                    let _ = repo.delete(id);
+                }
+            }
+            for i in 0..model_close.row_count() {
+                if let Some(r) = model_close.row_data(i) {
+                    let mut custom = CustomFormationLevel::new(
+                        lib_id,
+                        r.name_ru.to_string(),
+                        r.name_en.to_string(),
+                        r.standard_level_ordinal,
+                    );
+                    let _ = repo.create(&mut custom);
+                }
+            }
+        }
+        let _ = ed.hide();
+    });
+    let weak_sel = weak_editor.clone();
+    let model_sel = model.clone();
+    editor.on_selection_changed(move |index| {
+        let Some(ed) = weak_sel.upgrade() else { return };
+        if index >= 0 && (index as usize) < model_sel.row_count() {
+            if let Some(r) = model_sel.row_data(index as usize) {
+                ed.set_current_name_ru(r.name_ru.clone());
+                ed.set_current_name_en(r.name_en.clone());
+                ed.set_current_standard_ordinal(r.standard_level_ordinal);
+            }
+        }
+    });
+    let weak_form = weak_editor.clone();
+    let model_form = model.clone();
+    editor.on_form_changed(move |ru, en, ord| {
+        let Some(ed) = weak_form.upgrade() else { return };
+        let idx = ed.get_current_index();
+        if idx >= 0 && (idx as usize) < model_form.row_count() {
+            let id = model_form.row_data(idx as usize).map(|r| r.id).unwrap_or(-1);
+            let _ = model_form.set_row_data(idx as usize, FormationLevelRow {
+                id,
+                name_ru: ru,
+                name_en: en,
+                standard_level_ordinal: ord,
+            });
+        }
+    });
+    let model_exp = model.clone();
+    editor.on_export_levels(move || {
+        let levels: Vec<CustomFormationLevel> = (0..model_exp.row_count())
+            .filter_map(|i| model_exp.row_data(i))
+                            .map(|r| CustomFormationLevel::new(lib_id, r.name_ru.to_string(), r.name_en.to_string(), r.standard_level_ordinal))
+                            .collect();
+        if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).save_file() {
+            if let Err(e) = export_formation_levels_to_path(path.as_path(), &levels) {
+                eprintln!("[ERROR] Export formation levels: {}", e);
+            }
+        }
+    });
+    let weak_imp = weak_editor.clone();
+    let model_imp = model.clone();
+    editor.on_import_levels(move || {
+        if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() {
+            match import_formation_levels_from_path(path.as_path()) {
+                Ok(imported) => {
+                    while model_imp.row_count() > 0 {
+                        model_imp.remove(0);
+                    }
+                    for e in imported {
+                        model_imp.insert(model_imp.row_count(), FormationLevelRow {
+                            id: -1,
+                            name_ru: e.name_ru.into(),
+                            name_en: e.name_en.into(),
+                            standard_level_ordinal: e.standard_level_ordinal,
+                        });
+                    }
+                    if let Some(ed) = weak_imp.upgrade() {
+                        ed.set_current_index(if model_imp.row_count() > 0 { 0 } else { -1 });
+                        if model_imp.row_count() > 0 {
+                            if let Some(r) = model_imp.row_data(0) {
+                                ed.set_current_name_ru(r.name_ru.clone());
+                                ed.set_current_name_en(r.name_en.clone());
+                                ed.set_current_standard_ordinal(r.standard_level_ordinal);
+                            }
+                        }
+                    }
+                }
+                Err(e) => eprintln!("[ERROR] Import formation levels: {}", e),
+            }
+        }
+    });
+    let state_copy = state.clone();
+    let weak_copy = weak_editor.clone();
+    let model_copy = model.clone();
+    let source_ids = source_library_ids.clone();
+    editor.on_copy_from_library(move || {
+        let Some(ed) = weak_copy.upgrade() else { return };
+        let idx = ed.get_copy_source_index();
+        if idx < 0 || (idx as usize) >= source_ids.len() {
+            return;
+        }
+        let source_id = source_ids[idx as usize];
+        let st = state_copy.borrow();
+        if let Some(ref db) = st.database {
+            let level_repo = FormationLevelRepo::new(db.conn());
+            if let Err(e) = copy_formation_levels_between_libraries(&level_repo, source_id, lib_id) {
+                eprintln!("[ERROR] Copy formation levels: {}", e);
+                return;
+            }
+            drop(st);
+            let st2 = state_copy.borrow();
+            if let Some(ref db2) = st2.database {
+                let level_repo2 = FormationLevelRepo::new(db2.conn());
+                if let Ok(new_levels) = level_repo2.list_by_library(lib_id) {
+                    while model_copy.row_count() > 0 {
+                        model_copy.remove(0);
+                    }
+                    for l in new_levels {
+                        model_copy.insert(model_copy.row_count(), FormationLevelRow {
+                            id: l.id.unwrap_or(-1) as i32,
+                            name_ru: l.name_ru.into(),
+                            name_en: l.name_en.into(),
+                            standard_level_ordinal: l.standard_level_ordinal,
+                        });
+                    }
+                    ed.set_current_index(if model_copy.row_count() > 0 { 0 } else { -1 });
+                    if model_copy.row_count() > 0 {
+                        if let Some(r) = model_copy.row_data(0) {
+                            ed.set_current_name_ru(r.name_ru.clone());
+                            ed.set_current_name_en(r.name_en.clone());
+                            ed.set_current_standard_ordinal(r.standard_level_ordinal);
+                        }
+                    }
+                }
+            }
+        }
+    });
+    editor.show().unwrap_or_default();
 }
 
 /// Ensure the given library is loaded as current; select it in UI if needed.

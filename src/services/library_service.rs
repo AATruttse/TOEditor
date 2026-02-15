@@ -2,13 +2,14 @@
 
 use anyhow::Result;
 use rusqlite::Connection;
-use crate::models::{Library, Snapshot};
-use crate::db::repositories::{LibraryRepo, VersionRepo};
+use crate::models::{Library, Snapshot, default_branches};
+use crate::db::repositories::{LibraryRepo, VersionRepo, BranchRepo};
 
 /// Service for library operations with automatic version management
 pub struct LibraryService<'a> {
     library_repo: LibraryRepo<'a>,
     version_repo: VersionRepo<'a>,
+    branch_repo: BranchRepo<'a>,
 }
 
 impl<'a> LibraryService<'a> {
@@ -17,19 +18,22 @@ impl<'a> LibraryService<'a> {
         Self {
             library_repo: LibraryRepo::new(conn),
             version_repo: VersionRepo::new(conn),
+            branch_repo: BranchRepo::new(conn),
         }
     }
 
-    /// Create a new library and create initial snapshot
+    /// Create a new library, initial snapshot, and default branches
     pub fn create_library(&self, mut library: Library) -> Result<Library> {
-        // Create library
         self.library_repo.create(&mut library)?;
         
-        // Create initial snapshot
         if let Some(lib_id) = library.id {
             let data = serde_json::to_string(&library)?;
             let mut snapshot = Snapshot::new(lib_id, library.version, data);
             self.version_repo.create(&mut snapshot)?;
+
+            for mut branch in default_branches(lib_id) {
+                self.branch_repo.create(&mut branch)?;
+            }
         }
         
         Ok(library)
@@ -108,6 +112,7 @@ impl<'a> LibraryService<'a> {
 mod tests {
     use super::*;
     use crate::db::Database;
+    use crate::db::repositories::BranchRepo;
 
     #[test]
     fn test_create_library_with_snapshot() {
@@ -187,6 +192,24 @@ mod tests {
         let results = service.search_libraries("John").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].author, "John Doe");
+    }
+
+    #[test]
+    fn test_create_library_creates_default_branches() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let library = Library::new(
+            "Test".to_string(),
+            "US".to_string(),
+            "2003".to_string(),
+            "Author".to_string(),
+        );
+        let created = service.create_library(library).unwrap();
+        let lib_id = created.id.unwrap();
+        let branch_repo = BranchRepo::new(db.conn());
+        let branches = branch_repo.list_by_library(lib_id).unwrap();
+        assert!(!branches.is_empty());
+        assert!(branches.iter().any(|b| b.name_en == "Infantry"));
     }
 
     #[test]

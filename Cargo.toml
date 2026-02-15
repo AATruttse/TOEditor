@@ -18,7 +18,7 @@ directories = "5.0"
 chrono = "0.4"
 toml = "0.8"
 yaml-rust = "0.4"  # For YAML if preferred over JSON
-# Add more later: libgit2 for versions, plotters for advanced diagrams if needed
+rfd = "0.14"       # Native file dialogs for Export/Import
 
 [dev-dependencies]
 tempfile = "3.0"

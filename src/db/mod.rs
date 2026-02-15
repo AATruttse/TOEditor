@@ -123,6 +123,37 @@ impl Database {
             [],
         )?;
 
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS formation_levels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                name_ru TEXT NOT NULL,
+                name_en TEXT NOT NULL,
+                standard_level_ordinal INTEGER NOT NULL,
+                FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_formation_levels_library_id ON formation_levels(library_id)",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS branches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                name_ru TEXT NOT NULL,
+                name_en TEXT NOT NULL,
+                FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_branches_library_id ON branches(library_id)",
+            [],
+        )?;
+
         Ok(())
     }
 }
@@ -146,5 +177,7 @@ mod tests {
         assert!(tables.contains(&"personnel".to_string()));
         assert!(tables.contains(&"equipment".to_string()));
         assert!(tables.contains(&"snapshots".to_string()));
+        assert!(tables.contains(&"formation_levels".to_string()));
+        assert!(tables.contains(&"branches".to_string()));
     }
 }
