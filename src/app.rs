@@ -2193,11 +2193,10 @@ fn init_toolbar(window: &MainWindow) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use crate::i18n::Language;
+    use super::ui_tr;
 
     #[test]
     fn test_language_switching_callback_setup() {
-        // Test that language switching callback can be set up
-        // This is a basic smoke test
         let lang = Language::from_code("ru");
         assert_eq!(lang, Language::Russian);
         
@@ -2218,5 +2217,48 @@ mod tests {
     fn test_language_names() {
         assert_eq!(Language::English.name(), "English");
         assert_eq!(Language::Russian.name(), "Русский");
+    }
+
+    #[test]
+    fn test_ui_tr_english_returns_key() {
+        assert_eq!(ui_tr("en", "New Library"), "New Library");
+        assert_eq!(ui_tr("en", "File"), "File");
+        assert_eq!(ui_tr("en", "Close"), "Close");
+        assert_eq!(ui_tr("en", "Unknown Key"), "Unknown Key");
+    }
+
+    #[test]
+    fn test_ui_tr_russian_known_keys() {
+        assert_eq!(ui_tr("ru", "New Library"), "Новая библиотека");
+        assert_eq!(ui_tr("ru", "File"), "Файл");
+        assert_eq!(ui_tr("ru", "Close"), "Закрыть");
+        assert_eq!(ui_tr("ru", "Delete"), "Удалить");
+        assert_eq!(ui_tr("ru", "Library"), "Библиотека");
+        assert_eq!(ui_tr("ru", "Formation levels"), "Уровни формирований");
+        assert_eq!(ui_tr("ru", "Branches…"), "Роды войск…");
+        assert_eq!(ui_tr("ru", "Branch categories…"), "Категории родов войск…");
+        assert_eq!(ui_tr("ru", "Category"), "Категория");
+        assert_eq!(ui_tr("ru", "Add"), "Добавить");
+    }
+
+    #[test]
+    fn test_ui_tr_russian_unknown_key_returns_key() {
+        assert_eq!(ui_tr("ru", "This key does not exist"), "This key does not exist");
+    }
+
+    #[test]
+    fn test_ui_tr_other_language_returns_key() {
+        // Any non-"ru" language should return the English key as-is
+        assert_eq!(ui_tr("fr", "New Library"), "New Library");
+        assert_eq!(ui_tr("de", "File"), "File");
+    }
+
+    #[test]
+    fn test_ui_tr_menu_items() {
+        assert_eq!(ui_tr("ru", "Export…"), "Экспорт…");
+        assert_eq!(ui_tr("ru", "Import…"), "Импорт…");
+        assert_eq!(ui_tr("ru", "Copy from library"), "Копировать из библиотеки");
+        assert_eq!(ui_tr("ru", "Name (Russian)"), "Название (рус.)");
+        assert_eq!(ui_tr("ru", "Name (English)"), "Название (англ.)");
     }
 }

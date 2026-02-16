@@ -127,3 +127,88 @@ impl CustomFormationLevel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_standard_level_count() {
+        assert_eq!(STANDARD_LEVEL_COUNT, 12);
+        assert_eq!(StandardFormationLevel::all().len(), STANDARD_LEVEL_COUNT);
+    }
+
+    #[test]
+    fn test_standard_level_names_en() {
+        assert_eq!(StandardFormationLevel::FireTeam.name_en(), "fire team");
+        assert_eq!(StandardFormationLevel::Squad.name_en(), "squad");
+        assert_eq!(StandardFormationLevel::Section.name_en(), "section");
+        assert_eq!(StandardFormationLevel::Platoon.name_en(), "platoon");
+        assert_eq!(StandardFormationLevel::Company.name_en(), "company");
+        assert_eq!(StandardFormationLevel::Battalion.name_en(), "battalion");
+        assert_eq!(StandardFormationLevel::Regiment.name_en(), "regiment");
+        assert_eq!(StandardFormationLevel::Brigade.name_en(), "brigade");
+        assert_eq!(StandardFormationLevel::Division.name_en(), "division");
+        assert_eq!(StandardFormationLevel::Corps.name_en(), "corps");
+        assert_eq!(StandardFormationLevel::Army.name_en(), "army");
+        assert_eq!(StandardFormationLevel::Front.name_en(), "front");
+    }
+
+    #[test]
+    fn test_standard_level_names_ru() {
+        assert_eq!(StandardFormationLevel::FireTeam.name_ru(), "огневая группа");
+        assert_eq!(StandardFormationLevel::Squad.name_ru(), "отделение");
+        assert_eq!(StandardFormationLevel::Platoon.name_ru(), "взвод");
+        assert_eq!(StandardFormationLevel::Company.name_ru(), "рота");
+        assert_eq!(StandardFormationLevel::Battalion.name_ru(), "батальон");
+        assert_eq!(StandardFormationLevel::Front.name_ru(), "фронт");
+    }
+
+    #[test]
+    fn test_standard_level_ordinal() {
+        assert_eq!(StandardFormationLevel::FireTeam.ordinal(), 0);
+        assert_eq!(StandardFormationLevel::Squad.ordinal(), 1);
+        assert_eq!(StandardFormationLevel::Front.ordinal(), 11);
+    }
+
+    #[test]
+    fn test_standard_level_from_ordinal_valid() {
+        for level in StandardFormationLevel::all() {
+            let recovered = StandardFormationLevel::from_ordinal(level.ordinal());
+            assert_eq!(recovered, Some(level));
+        }
+    }
+
+    #[test]
+    fn test_standard_level_from_ordinal_invalid() {
+        assert_eq!(StandardFormationLevel::from_ordinal(-1), None);
+        assert_eq!(StandardFormationLevel::from_ordinal(12), None);
+        assert_eq!(StandardFormationLevel::from_ordinal(100), None);
+    }
+
+    #[test]
+    fn test_standard_level_all_ordered() {
+        let all = StandardFormationLevel::all();
+        for i in 0..all.len() {
+            assert_eq!(all[i].ordinal(), i as i32);
+        }
+    }
+
+    #[test]
+    fn test_custom_formation_level_new() {
+        let level = CustomFormationLevel::new(1, "взвод".to_string(), "platoon".to_string(), 3);
+        assert_eq!(level.id, None);
+        assert_eq!(level.library_id, 1);
+        assert_eq!(level.name_ru, "взвод");
+        assert_eq!(level.name_en, "platoon");
+        assert_eq!(level.standard_level_ordinal, 3);
+    }
+
+    #[test]
+    fn test_custom_formation_level_serialization() {
+        let level = CustomFormationLevel::new(1, "рота".to_string(), "company".to_string(), 4);
+        let json = serde_json::to_string(&level).unwrap();
+        let deserialized: CustomFormationLevel = serde_json::from_str(&json).unwrap();
+        assert_eq!(level, deserialized);
+    }
+}

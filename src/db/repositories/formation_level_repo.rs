@@ -149,4 +149,42 @@ mod tests {
         repo.delete(level.id.unwrap()).unwrap();
         assert!(repo.get_by_id(level.id.unwrap()).unwrap().is_none());
     }
+
+    #[test]
+    fn test_formation_level_delete_by_library() {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let mut library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        lib_repo.create(&mut library).unwrap();
+        let lib_id = library.id.unwrap();
+
+        let repo = FormationLevelRepo::new(db.conn());
+        let mut l1 = CustomFormationLevel::new(lib_id, "взвод".to_string(), "platoon".to_string(), 3);
+        let mut l2 = CustomFormationLevel::new(lib_id, "рота".to_string(), "company".to_string(), 4);
+        repo.create(&mut l1).unwrap();
+        repo.create(&mut l2).unwrap();
+        assert_eq!(repo.list_by_library(lib_id).unwrap().len(), 2);
+
+        repo.delete_by_library(lib_id).unwrap();
+        assert!(repo.list_by_library(lib_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_formation_level_get_nonexistent() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = FormationLevelRepo::new(db.conn());
+        let result = repo.get_by_id(999).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_formation_level_update_without_id_fails() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = FormationLevelRepo::new(db.conn());
+        let level = CustomFormationLevel::new(1, "взвод".to_string(), "platoon".to_string(), 3);
+        let result = repo.update(&level);
+        assert!(result.is_err());
+    }
 }

@@ -98,4 +98,14 @@ mod tests {
         assert!(versions.is_some());
         assert_eq!(versions.unwrap().len(), 1);
     }
+
+    #[test]
+    fn test_import_yaml_not_implemented() {
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), "name: Test").unwrap();
+        let result = import_yaml(file.path());
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("not yet implemented"));
+    }
 }

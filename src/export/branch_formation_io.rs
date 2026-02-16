@@ -280,4 +280,155 @@ mod tests {
         assert_eq!(target_levels[0].name_en, "platoon");
         assert_eq!(target_levels[0].library_id, id2);
     }
+
+    // ---- Edge case tests ----
+
+    #[test]
+    fn test_export_import_empty_branches() {
+        let path = NamedTempFile::new().unwrap().into_temp_path();
+        let branches: Vec<Branch> = vec![];
+        export_branches_to_path(path.as_ref(), &branches).unwrap();
+        let imported = import_branches_from_path(path.as_ref()).unwrap();
+        assert!(imported.is_empty());
+    }
+
+    #[test]
+    fn test_export_import_empty_formation_levels() {
+        let path = NamedTempFile::new().unwrap().into_temp_path();
+        let levels: Vec<CustomFormationLevel> = vec![];
+        export_formation_levels_to_path(path.as_ref(), &levels).unwrap();
+        let imported = import_formation_levels_from_path(path.as_ref()).unwrap();
+        assert!(imported.is_empty());
+    }
+
+    #[test]
+    fn test_export_import_empty_categories() {
+        let path = NamedTempFile::new().unwrap().into_temp_path();
+        let categories: Vec<BranchCategory> = vec![];
+        export_branch_categories_to_path(path.as_ref(), &categories).unwrap();
+        let imported = import_branch_categories_from_path(path.as_ref()).unwrap();
+        assert!(imported.is_empty());
+    }
+
+    #[test]
+    fn test_import_branches_invalid_json() {
+        let path = NamedTempFile::new().unwrap().into_temp_path();
+        let p: &std::path::Path = path.as_ref();
+        std::fs::write(p, "not valid json").unwrap();
+        let result = import_branches_from_path(p);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_import_formation_levels_invalid_json() {
+        let path = NamedTempFile::new().unwrap().into_temp_path();
+        let p: &std::path::Path = path.as_ref();
+        std::fs::write(p, "{ bad }").unwrap();
+        let result = import_formation_levels_from_path(p);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_import_branch_categories_invalid_json() {
+        let path = NamedTempFile::new().unwrap().into_temp_path();
+        let p: &std::path::Path = path.as_ref();
+        std::fs::write(p, "}{").unwrap();
+        let result = import_branch_categories_from_path(p);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_import_branches_nonexistent_file() {
+        let result = import_branches_from_path(std::path::Path::new("/nonexistent/branches.json"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_import_formation_levels_nonexistent_file() {
+        let result = import_formation_levels_from_path(std::path::Path::new("/nonexistent/levels.json"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_import_branch_categories_nonexistent_file() {
+        let result = import_branch_categories_from_path(std::path::Path::new("/nonexistent/cats.json"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_copy_branches_replaces_target() {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let branch_repo = BranchRepo::new(db.conn());
+        let mut lib1 = Library::new("Lib1".to_string(), "US".to_string(), "2003".to_string(), "A".to_string());
+        let mut lib2 = Library::new("Lib2".to_string(), "RU".to_string(), "2020".to_string(), "B".to_string());
+        lib_repo.create(&mut lib1).unwrap();
+        lib_repo.create(&mut lib2).unwrap();
+        let id1 = lib1.id.unwrap();
+        let id2 = lib2.id.unwrap();
+
+        // Target has existing branches
+        let mut target_old = Branch::new(id2, "Старый".to_string(), "Old".to_string());
+        branch_repo.create(&mut target_old).unwrap();
+        assert_eq!(branch_repo.list_by_library(id2).unwrap().len(), 1);
+
+        // Source has different branches
+        let mut source1 = Branch::new(id1, "Пехота".to_string(), "Infantry".to_string());
+        let mut source2 = Branch::new(id1, "Танки".to_string(), "Armor".to_string());
+        branch_repo.create(&mut source1).unwrap();
+        branch_repo.create(&mut source2).unwrap();
+
+        // Copy should REPLACE target's branches
+        copy_branches_between_libraries(&branch_repo, id1, id2).unwrap();
+        let target_branches = branch_repo.list_by_library(id2).unwrap();
+        assert_eq!(target_branches.len(), 2);
+        assert!(target_branches.iter().all(|b| b.library_id == id2));
+        assert!(target_branches.iter().any(|b| b.name_en == "Infantry"));
+        assert!(target_branches.iter().any(|b| b.name_en == "Armor"));
+        // Old branch should be gone
+        assert!(!target_branches.iter().any(|b| b.name_en == "Old"));
+    }
+
+    #[test]
+    fn test_copy_branches_clears_category_id() {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let branch_repo = BranchRepo::new(db.conn());
+        let mut lib1 = Library::new("Lib1".to_string(), "US".to_string(), "2003".to_string(), "A".to_string());
+        let mut lib2 = Library::new("Lib2".to_string(), "RU".to_string(), "2020".to_string(), "B".to_string());
+        lib_repo.create(&mut lib1).unwrap();
+        lib_repo.create(&mut lib2).unwrap();
+        let id1 = lib1.id.unwrap();
+        let id2 = lib2.id.unwrap();
+
+        let mut b = Branch::with_category(id1, Some(42), "Пехота".to_string(), "Infantry".to_string());
+        branch_repo.create(&mut b).unwrap();
+
+        copy_branches_between_libraries(&branch_repo, id1, id2).unwrap();
+        let target = branch_repo.list_by_library(id2).unwrap();
+        assert_eq!(target.len(), 1);
+        // Category ID should be cleared because target library has different categories
+        assert_eq!(target[0].category_id, None);
+    }
+
+    #[test]
+    fn test_copy_from_empty_source() {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let branch_repo = BranchRepo::new(db.conn());
+        let mut lib1 = Library::new("Lib1".to_string(), "US".to_string(), "2003".to_string(), "A".to_string());
+        let mut lib2 = Library::new("Lib2".to_string(), "RU".to_string(), "2020".to_string(), "B".to_string());
+        lib_repo.create(&mut lib1).unwrap();
+        lib_repo.create(&mut lib2).unwrap();
+        let id1 = lib1.id.unwrap();
+        let id2 = lib2.id.unwrap();
+
+        // Target has branches
+        let mut b = Branch::new(id2, "Пехота".to_string(), "Infantry".to_string());
+        branch_repo.create(&mut b).unwrap();
+
+        // Copy from empty source should clear target
+        copy_branches_between_libraries(&branch_repo, id1, id2).unwrap();
+        assert!(branch_repo.list_by_library(id2).unwrap().is_empty());
+    }
 }

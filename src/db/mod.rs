@@ -198,4 +198,65 @@ mod tests {
         assert!(tables.contains(&"branch_categories".to_string()));
         assert!(tables.contains(&"branches".to_string()));
     }
+
+    #[test]
+    fn test_database_migration_idempotency() {
+        // Running migrations twice should not cause errors
+        let db = Database::open_in_memory().unwrap();
+        // run_migrations was already called in open_in_memory.
+        // Call it again to verify idempotency.
+        db.run_migrations().unwrap();
+
+        // Verify tables still exist and are usable
+        let mut stmt = db.conn().prepare("SELECT name FROM sqlite_master WHERE type='table'").unwrap();
+        let tables: Vec<String> = stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(tables.contains(&"libraries".to_string()));
+        assert!(tables.contains(&"branches".to_string()));
+        assert!(tables.contains(&"branch_categories".to_string()));
+    }
+
+    #[test]
+    fn test_database_indexes_created() {
+        let db = Database::open_in_memory().unwrap();
+        let mut stmt = db.conn().prepare("SELECT name FROM sqlite_master WHERE type='index'").unwrap();
+        let indexes: Vec<String> = stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+
+        assert!(indexes.contains(&"idx_units_library_id".to_string()));
+        assert!(indexes.contains(&"idx_units_parent_id".to_string()));
+        assert!(indexes.contains(&"idx_snapshots_library_id".to_string()));
+        assert!(indexes.contains(&"idx_formation_levels_library_id".to_string()));
+        assert!(indexes.contains(&"idx_branches_library_id".to_string()));
+        assert!(indexes.contains(&"idx_branch_categories_library_id".to_string()));
+    }
+
+    #[test]
+    fn test_database_file_based() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+
+        // Create and populate database
+        {
+            let db = Database::open(&db_path).unwrap();
+            let lib_repo = crate::db::repositories::LibraryRepo::new(db.conn());
+            let mut lib = crate::models::Library::new(
+                "Test".to_string(), "US".to_string(), "2003".to_string(), "A".to_string(),
+            );
+            lib_repo.create(&mut lib).unwrap();
+        }
+
+        // Reopen and verify data persists
+        {
+            let db = Database::open(&db_path).unwrap();
+            let lib_repo = crate::db::repositories::LibraryRepo::new(db.conn());
+            let libs = lib_repo.list_all().unwrap();
+            assert_eq!(libs.len(), 1);
+            assert_eq!(libs[0].name, "Test");
+        }
+    }
 }

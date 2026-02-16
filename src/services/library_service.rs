@@ -244,4 +244,122 @@ mod tests {
         assert!(restored.is_some());
         assert_eq!(restored.unwrap().name, "Test");
     }
+
+    #[test]
+    fn test_create_library_creates_default_categories() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        let created = service.create_library(library).unwrap();
+        let lib_id = created.id.unwrap();
+
+        let cat_repo = crate::db::repositories::BranchCategoryRepo::new(db.conn());
+        let categories = cat_repo.list_by_library(lib_id).unwrap();
+        assert_eq!(categories.len(), 6);
+        assert!(categories.iter().any(|c| c.name_en == "Combat"));
+        assert!(categories.iter().any(|c| c.name_en == "Artillery"));
+        assert!(categories.iter().any(|c| c.name_en == "Air defense"));
+        assert!(categories.iter().any(|c| c.name_en == "Army aviation"));
+        assert!(categories.iter().any(|c| c.name_en == "Combat support"));
+        assert!(categories.iter().any(|c| c.name_en == "Logistics support"));
+    }
+
+    #[test]
+    fn test_create_library_branches_have_category_ids() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        let created = service.create_library(library).unwrap();
+        let lib_id = created.id.unwrap();
+
+        let branch_repo = BranchRepo::new(db.conn());
+        let branches = branch_repo.list_by_library(lib_id).unwrap();
+        // All default branches should have a category_id assigned
+        for b in &branches {
+            assert!(b.category_id.is_some(),
+                "Branch '{}' has no category_id", b.name_en);
+        }
+    }
+
+    #[test]
+    fn test_list_libraries() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+
+        assert!(service.list_libraries().unwrap().is_empty());
+
+        let lib1 = Library::new("Alpha".to_string(), "US".to_string(), "2003".to_string(), "A".to_string());
+        let lib2 = Library::new("Bravo".to_string(), "RU".to_string(), "2020".to_string(), "B".to_string());
+        service.create_library(lib1).unwrap();
+        service.create_library(lib2).unwrap();
+
+        let list = service.list_libraries().unwrap();
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn test_save_library_without_snapshot() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+
+        let mut library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        library = service.create_library(library).unwrap();
+        assert_eq!(library.version, 1);
+
+        // Update without creating a snapshot
+        library.name = "Updated".to_string();
+        library = service.save_library(library, false).unwrap();
+        // Version should NOT be incremented
+        assert_eq!(library.version, 1);
+
+        // Only the initial snapshot should exist
+        let snapshots = service.get_library_versions(library.id.unwrap()).unwrap();
+        assert_eq!(snapshots.len(), 1);
+    }
+
+    #[test]
+    fn test_restore_from_nonexistent_version() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+
+        let library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        let created = service.create_library(library).unwrap();
+
+        let result = service.restore_from_version(created.id.unwrap(), 999).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_latest_version() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+
+        let mut library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        library = service.create_library(library).unwrap();
+
+        library.name = "V2".to_string();
+        library = service.save_library(library, true).unwrap();
+
+        let latest = service.get_latest_version(library.id.unwrap()).unwrap();
+        assert!(latest.is_some());
+        assert_eq!(latest.unwrap().version, 2);
+    }
+
+    #[test]
+    fn test_get_library_nonexistent() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let result = service.get_library(999).unwrap();
+        assert!(result.is_none());
+    }
 }

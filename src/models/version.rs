@@ -75,5 +75,35 @@ mod tests {
         assert_eq!(snapshot.library_id, 1);
         assert_eq!(snapshot.version, 1);
         assert!(snapshot.timestamp > 0);
+        assert_eq!(snapshot.id, None);
+        assert_eq!(snapshot.description, None);
+        assert_eq!(snapshot.data, "{}");
+    }
+
+    #[test]
+    fn test_snapshot_with_description() {
+        let snapshot = Snapshot::with_description(1, 2, "data".to_string(), "desc".to_string());
+        assert_eq!(snapshot.library_id, 1);
+        assert_eq!(snapshot.version, 2);
+        assert_eq!(snapshot.data, "data");
+        assert_eq!(snapshot.description, Some("desc".to_string()));
+        assert!(snapshot.timestamp > 0);
+        assert_eq!(snapshot.id, None);
+    }
+
+    #[test]
+    fn test_diff_snapshots_stub() {
+        let s1 = Snapshot::new(1, 1, "{}".to_string());
+        let s2 = Snapshot::new(1, 2, "{\"a\":1}".to_string());
+        let diff = diff_snapshots(&s1, &s2);
+        assert!(!diff.is_empty());
+    }
+
+    #[test]
+    fn test_snapshot_serialization() {
+        let snapshot = Snapshot::with_description(1, 1, "data".to_string(), "test".to_string());
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let deserialized: Snapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(snapshot, deserialized);
     }
 }

@@ -149,4 +149,117 @@ mod tests {
         assert!(list.iter().any(|b| b.name_en == "Infantry"));
         assert!(list.iter().any(|b| b.name_en == "Cavalry"));
     }
+
+    #[test]
+    fn test_branch_delete_by_library() {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let mut library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        lib_repo.create(&mut library).unwrap();
+        let lib_id = library.id.unwrap();
+
+        let repo = BranchRepo::new(db.conn());
+        let mut b1 = Branch::new(lib_id, "Пехота".to_string(), "Infantry".to_string());
+        let mut b2 = Branch::new(lib_id, "Танки".to_string(), "Armor".to_string());
+        repo.create(&mut b1).unwrap();
+        repo.create(&mut b2).unwrap();
+        assert_eq!(repo.list_by_library(lib_id).unwrap().len(), 2);
+
+        repo.delete_by_library(lib_id).unwrap();
+        assert!(repo.list_by_library(lib_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_branch_with_category_roundtrip() {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let mut library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        lib_repo.create(&mut library).unwrap();
+        let lib_id = library.id.unwrap();
+
+        let repo = BranchRepo::new(db.conn());
+        let mut branch = Branch::with_category(
+            lib_id, Some(42), "Пехота".to_string(), "Infantry".to_string(),
+        );
+        repo.create(&mut branch).unwrap();
+
+        let loaded = repo.get_by_id(branch.id.unwrap()).unwrap().unwrap();
+        assert_eq!(loaded.category_id, Some(42));
+        assert_eq!(loaded.name_en, "Infantry");
+    }
+
+    #[test]
+    fn test_branch_update_does_not_update_category_id() {
+        // NOTE: This test documents a known limitation — BranchRepo::update
+        // only updates name_ru and name_en, NOT category_id. The category is
+        // updated via the UI model (delete all + recreate pattern).
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let mut library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        lib_repo.create(&mut library).unwrap();
+        let lib_id = library.id.unwrap();
+
+        let repo = BranchRepo::new(db.conn());
+        let mut branch = Branch::with_category(
+            lib_id, Some(10), "Пехота".to_string(), "Infantry".to_string(),
+        );
+        repo.create(&mut branch).unwrap();
+
+        // Update the branch (only names are updated by the current implementation)
+        let mut updated = branch.clone();
+        updated.name_ru = "Мотострелки".to_string();
+        updated.category_id = Some(99);
+        repo.update(&updated).unwrap();
+
+        let after = repo.get_by_id(branch.id.unwrap()).unwrap().unwrap();
+        assert_eq!(after.name_ru, "Мотострелки");
+        // category_id is NOT updated by update() — remains the original value
+        assert_eq!(after.category_id, Some(10));
+    }
+
+    #[test]
+    fn test_branch_get_nonexistent() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = BranchRepo::new(db.conn());
+        let result = repo.get_by_id(999).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_branch_update_without_id_fails() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = BranchRepo::new(db.conn());
+        let branch = Branch::new(1, "Пехота".to_string(), "Infantry".to_string());
+        let result = repo.update(&branch);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_branch_isolation_between_libraries() {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let mut lib1 = Library::new("L1".to_string(), "US".to_string(), "2003".to_string(), "A".to_string());
+        let mut lib2 = Library::new("L2".to_string(), "RU".to_string(), "2020".to_string(), "B".to_string());
+        lib_repo.create(&mut lib1).unwrap();
+        lib_repo.create(&mut lib2).unwrap();
+
+        let repo = BranchRepo::new(db.conn());
+        let mut b1 = Branch::new(lib1.id.unwrap(), "Пехота".to_string(), "Infantry".to_string());
+        let mut b2 = Branch::new(lib2.id.unwrap(), "Танки".to_string(), "Armor".to_string());
+        repo.create(&mut b1).unwrap();
+        repo.create(&mut b2).unwrap();
+
+        let list1 = repo.list_by_library(lib1.id.unwrap()).unwrap();
+        let list2 = repo.list_by_library(lib2.id.unwrap()).unwrap();
+        assert_eq!(list1.len(), 1);
+        assert_eq!(list2.len(), 1);
+        assert_eq!(list1[0].name_en, "Infantry");
+        assert_eq!(list2[0].name_en, "Armor");
+    }
 }

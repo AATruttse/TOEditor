@@ -79,3 +79,152 @@ impl<'a> BranchCategoryRepo<'a> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+    use crate::db::repositories::LibraryRepo;
+    use crate::models::{Library, BranchCategory};
+
+    fn setup() -> (Database, i64) {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let mut library = Library::new(
+            "Test".to_string(),
+            "US".to_string(),
+            "2003".to_string(),
+            "Author".to_string(),
+        );
+        lib_repo.create(&mut library).unwrap();
+        let lib_id = library.id.unwrap();
+        (db, lib_id)
+    }
+
+    #[test]
+    fn test_branch_category_create_and_get() {
+        let (db, lib_id) = setup();
+        let repo = BranchCategoryRepo::new(db.conn());
+
+        let mut cat = BranchCategory::new(lib_id, "Боевые".to_string(), "Combat".to_string());
+        repo.create(&mut cat).unwrap();
+        assert!(cat.id.is_some());
+
+        let loaded = repo.get_by_id(cat.id.unwrap()).unwrap();
+        assert!(loaded.is_some());
+        let c = loaded.unwrap();
+        assert_eq!(c.name_ru, "Боевые");
+        assert_eq!(c.name_en, "Combat");
+        assert_eq!(c.library_id, lib_id);
+    }
+
+    #[test]
+    fn test_branch_category_list_by_library() {
+        let (db, lib_id) = setup();
+        let repo = BranchCategoryRepo::new(db.conn());
+
+        let mut c1 = BranchCategory::new(lib_id, "Боевые".to_string(), "Combat".to_string());
+        let mut c2 = BranchCategory::new(lib_id, "ПВО".to_string(), "Air defense".to_string());
+        repo.create(&mut c1).unwrap();
+        repo.create(&mut c2).unwrap();
+
+        let list = repo.list_by_library(lib_id).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].name_en, "Combat");
+        assert_eq!(list[1].name_en, "Air defense");
+    }
+
+    #[test]
+    fn test_branch_category_list_by_library_empty() {
+        let (db, lib_id) = setup();
+        let repo = BranchCategoryRepo::new(db.conn());
+        let list = repo.list_by_library(lib_id).unwrap();
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_branch_category_update() {
+        let (db, lib_id) = setup();
+        let repo = BranchCategoryRepo::new(db.conn());
+
+        let mut cat = BranchCategory::new(lib_id, "Боевые".to_string(), "Combat".to_string());
+        repo.create(&mut cat).unwrap();
+
+        let mut updated = cat.clone();
+        updated.name_ru = "Артиллерия".to_string();
+        updated.name_en = "Artillery".to_string();
+        repo.update(&updated).unwrap();
+
+        let after = repo.get_by_id(cat.id.unwrap()).unwrap().unwrap();
+        assert_eq!(after.name_ru, "Артиллерия");
+        assert_eq!(after.name_en, "Artillery");
+    }
+
+    #[test]
+    fn test_branch_category_update_without_id_fails() {
+        let (db, lib_id) = setup();
+        let repo = BranchCategoryRepo::new(db.conn());
+        let cat = BranchCategory::new(lib_id, "Боевые".to_string(), "Combat".to_string());
+        let result = repo.update(&cat);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_branch_category_delete() {
+        let (db, lib_id) = setup();
+        let repo = BranchCategoryRepo::new(db.conn());
+
+        let mut cat = BranchCategory::new(lib_id, "Боевые".to_string(), "Combat".to_string());
+        repo.create(&mut cat).unwrap();
+        assert!(repo.get_by_id(cat.id.unwrap()).unwrap().is_some());
+
+        repo.delete(cat.id.unwrap()).unwrap();
+        assert!(repo.get_by_id(cat.id.unwrap()).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_branch_category_delete_by_library() {
+        let (db, lib_id) = setup();
+        let repo = BranchCategoryRepo::new(db.conn());
+
+        let mut c1 = BranchCategory::new(lib_id, "Боевые".to_string(), "Combat".to_string());
+        let mut c2 = BranchCategory::new(lib_id, "ПВО".to_string(), "Air defense".to_string());
+        repo.create(&mut c1).unwrap();
+        repo.create(&mut c2).unwrap();
+        assert_eq!(repo.list_by_library(lib_id).unwrap().len(), 2);
+
+        repo.delete_by_library(lib_id).unwrap();
+        assert!(repo.list_by_library(lib_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_branch_category_get_nonexistent() {
+        let (db, _lib_id) = setup();
+        let repo = BranchCategoryRepo::new(db.conn());
+        let result = repo.get_by_id(999).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_branch_category_isolation_between_libraries() {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let mut lib1 = Library::new("Lib1".to_string(), "US".to_string(), "2003".to_string(), "A".to_string());
+        let mut lib2 = Library::new("Lib2".to_string(), "RU".to_string(), "2020".to_string(), "B".to_string());
+        lib_repo.create(&mut lib1).unwrap();
+        lib_repo.create(&mut lib2).unwrap();
+
+        let repo = BranchCategoryRepo::new(db.conn());
+        let mut c1 = BranchCategory::new(lib1.id.unwrap(), "Боевые".to_string(), "Combat".to_string());
+        let mut c2 = BranchCategory::new(lib2.id.unwrap(), "ПВО".to_string(), "Air defense".to_string());
+        repo.create(&mut c1).unwrap();
+        repo.create(&mut c2).unwrap();
+
+        let list1 = repo.list_by_library(lib1.id.unwrap()).unwrap();
+        let list2 = repo.list_by_library(lib2.id.unwrap()).unwrap();
+        assert_eq!(list1.len(), 1);
+        assert_eq!(list2.len(), 1);
+        assert_eq!(list1[0].name_en, "Combat");
+        assert_eq!(list2[0].name_en, "Air defense");
+    }
+}
