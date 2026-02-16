@@ -140,6 +140,21 @@ impl Database {
         )?;
 
         self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS branch_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                name_ru TEXT NOT NULL,
+                name_en TEXT NOT NULL,
+                FOREIGN KEY (library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_branch_categories_library_id ON branch_categories(library_id)",
+            [],
+        )?;
+
+        self.conn.execute(
             "CREATE TABLE IF NOT EXISTS branches (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 library_id INTEGER NOT NULL,
@@ -153,6 +168,8 @@ impl Database {
             "CREATE INDEX IF NOT EXISTS idx_branches_library_id ON branches(library_id)",
             [],
         )?;
+        // Migration: add category_id to branches (for branch categories support)
+        let _ = self.conn.execute("ALTER TABLE branches ADD COLUMN category_id INTEGER", []);
 
         Ok(())
     }
@@ -178,6 +195,7 @@ mod tests {
         assert!(tables.contains(&"equipment".to_string()));
         assert!(tables.contains(&"snapshots".to_string()));
         assert!(tables.contains(&"formation_levels".to_string()));
+        assert!(tables.contains(&"branch_categories".to_string()));
         assert!(tables.contains(&"branches".to_string()));
     }
 }

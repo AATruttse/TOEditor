@@ -3,8 +3,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use crate::models::{Branch, CustomFormationLevel};
-use crate::db::repositories::{BranchRepo, FormationLevelRepo};
+use crate::models::{Branch, BranchCategory, CustomFormationLevel};
+use crate::db::repositories::{BranchRepo, BranchCategoryRepo, FormationLevelRepo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchExport {
@@ -20,8 +20,19 @@ pub struct FormationLevelExport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BranchCategoryExport {
+    pub name_ru: String,
+    pub name_en: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct BranchesFile {
     pub branches: Vec<BranchExport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BranchCategoriesFile {
+    pub categories: Vec<BranchCategoryExport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +60,44 @@ pub fn import_branches_from_path(path: &Path) -> Result<Vec<BranchExport>> {
     let json = std::fs::read_to_string(path)?;
     let file: BranchesFile = serde_json::from_str(&json)?;
     Ok(file.branches)
+}
+
+/// Export branch categories to a JSON file.
+pub fn export_branch_categories_to_path(path: &Path, categories: &[BranchCategory]) -> Result<()> {
+    let data: Vec<BranchCategoryExport> = categories
+        .iter()
+        .map(|c| BranchCategoryExport {
+            name_ru: c.name_ru.clone(),
+            name_en: c.name_en.clone(),
+        })
+        .collect();
+    let file = BranchCategoriesFile { categories: data };
+    let json = serde_json::to_string_pretty(&file)?;
+    std::fs::write(path, json)?;
+    Ok(())
+}
+
+/// Import branch categories from a JSON file. Returns the list (without library_id); caller inserts into DB.
+pub fn import_branch_categories_from_path(path: &Path) -> Result<Vec<BranchCategoryExport>> {
+    let json = std::fs::read_to_string(path)?;
+    let file: BranchCategoriesFile = serde_json::from_str(&json)?;
+    Ok(file.categories)
+}
+
+/// Copy all branch categories from source library to target library (replaces target's).
+pub fn copy_branch_categories_between_libraries(
+    category_repo: &BranchCategoryRepo,
+    source_library_id: i64,
+    target_library_id: i64,
+) -> Result<()> {
+    let categories = category_repo.list_by_library(source_library_id)?;
+    category_repo.delete_by_library(target_library_id)?;
+    for mut c in categories {
+        c.id = None;
+        c.library_id = target_library_id;
+        category_repo.create(&mut c)?;
+    }
+    Ok(())
 }
 
 /// Export formation levels to a JSON file.
@@ -87,6 +136,7 @@ pub fn copy_branches_between_libraries(
     for mut b in branches {
         b.id = None;
         b.library_id = target_library_id;
+        b.category_id = None; // target library has its own categories
         branch_repo.create(&mut b)?;
     }
     Ok(())
@@ -112,8 +162,8 @@ pub fn copy_formation_levels_between_libraries(
 mod tests {
     use super::*;
     use crate::db::Database;
-    use crate::db::repositories::{BranchRepo, FormationLevelRepo, LibraryRepo};
-    use crate::models::{CustomFormationLevel, Library};
+    use crate::db::repositories::{BranchCategoryRepo, BranchRepo, FormationLevelRepo, LibraryRepo};
+    use crate::models::{BranchCategory, CustomFormationLevel, Library};
     use tempfile::NamedTempFile;
 
     #[test]
@@ -174,6 +224,41 @@ mod tests {
         assert_eq!(target_branches.len(), 1);
         assert_eq!(target_branches[0].name_en, "Infantry");
         assert_eq!(target_branches[0].library_id, id2);
+    }
+
+    #[test]
+    fn test_export_import_branch_categories_roundtrip() {
+        let path = NamedTempFile::new().unwrap().into_temp_path();
+        let categories = vec![
+            BranchCategory::new(1, "Боевые".to_string(), "Combat".to_string()),
+            BranchCategory::new(1, "ПВО".to_string(), "Air defense".to_string()),
+        ];
+        export_branch_categories_to_path(path.as_ref(), &categories).unwrap();
+        let imported = import_branch_categories_from_path(path.as_ref()).unwrap();
+        assert_eq!(imported.len(), 2);
+        assert_eq!(imported[0].name_ru, "Боевые");
+        assert_eq!(imported[0].name_en, "Combat");
+        assert_eq!(imported[1].name_en, "Air defense");
+    }
+
+    #[test]
+    fn test_copy_branch_categories_between_libraries() {
+        let db = Database::open_in_memory().unwrap();
+        let lib_repo = LibraryRepo::new(db.conn());
+        let cat_repo = BranchCategoryRepo::new(db.conn());
+        let mut lib1 = Library::new("Lib1".to_string(), "US".to_string(), "2003".to_string(), "A".to_string());
+        let mut lib2 = Library::new("Lib2".to_string(), "RU".to_string(), "2020".to_string(), "B".to_string());
+        lib_repo.create(&mut lib1).unwrap();
+        lib_repo.create(&mut lib2).unwrap();
+        let id1 = lib1.id.unwrap();
+        let id2 = lib2.id.unwrap();
+        let mut c1 = BranchCategory::new(id1, "Боевые".to_string(), "Combat".to_string());
+        cat_repo.create(&mut c1).unwrap();
+        copy_branch_categories_between_libraries(&cat_repo, id1, id2).unwrap();
+        let target_cats = cat_repo.list_by_library(id2).unwrap();
+        assert_eq!(target_cats.len(), 1);
+        assert_eq!(target_cats[0].name_en, "Combat");
+        assert_eq!(target_cats[0].library_id, id2);
     }
 
     #[test]

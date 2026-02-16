@@ -15,8 +15,8 @@ impl<'a> BranchRepo<'a> {
 
     pub fn create(&self, branch: &mut Branch) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO branches (library_id, name_ru, name_en) VALUES (?1, ?2, ?3)",
-            params![branch.library_id, branch.name_ru, branch.name_en],
+            "INSERT INTO branches (library_id, category_id, name_ru, name_en) VALUES (?1, ?2, ?3, ?4)",
+            params![branch.library_id, branch.category_id, branch.name_ru, branch.name_en],
         )?;
         branch.id = Some(self.conn.last_insert_rowid());
         Ok(())
@@ -24,14 +24,15 @@ impl<'a> BranchRepo<'a> {
 
     pub fn get_by_id(&self, id: i64) -> Result<Option<Branch>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, library_id, name_ru, name_en FROM branches WHERE id = ?1",
+            "SELECT id, library_id, category_id, name_ru, name_en FROM branches WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], |row| {
             Ok(Branch {
                 id: Some(row.get(0)?),
                 library_id: row.get(1)?,
-                name_ru: row.get(2)?,
-                name_en: row.get(3)?,
+                category_id: row.get(2)?,
+                name_ru: row.get(3)?,
+                name_en: row.get(4)?,
             })
         })?;
         match rows.next() {
@@ -43,14 +44,15 @@ impl<'a> BranchRepo<'a> {
 
     pub fn list_by_library(&self, library_id: i64) -> Result<Vec<Branch>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, library_id, name_ru, name_en FROM branches WHERE library_id = ?1 ORDER BY id",
+            "SELECT id, library_id, category_id, name_ru, name_en FROM branches WHERE library_id = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map(params![library_id], |row| {
             Ok(Branch {
                 id: Some(row.get(0)?),
                 library_id: row.get(1)?,
-                name_ru: row.get(2)?,
-                name_en: row.get(3)?,
+                category_id: row.get(2)?,
+                name_ru: row.get(3)?,
+                name_en: row.get(4)?,
             })
         })?;
         let mut out = Vec::new();
@@ -102,7 +104,7 @@ mod tests {
         let lib_id = library.id.unwrap();
 
         let repo = BranchRepo::new(db.conn());
-        let mut branch = Branch::new(lib_id, "Пехота".to_string(), "Infantry".to_string());
+        let mut branch = Branch::with_category(lib_id, None, "Пехота".to_string(), "Infantry".to_string());
         repo.create(&mut branch).unwrap();
         assert!(branch.id.is_some());
 
@@ -139,7 +141,7 @@ mod tests {
         lib_repo.create(&mut library).unwrap();
         let lib_id = library.id.unwrap();
 
-        for mut b in default_branches(lib_id) {
+        for (mut b, _cat_idx) in default_branches(lib_id) {
             branch_repo.create(&mut b).unwrap();
         }
         let list = branch_repo.list_by_library(lib_id).unwrap();

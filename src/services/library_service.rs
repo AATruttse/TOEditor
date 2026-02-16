@@ -2,14 +2,15 @@
 
 use anyhow::Result;
 use rusqlite::Connection;
-use crate::models::{Library, Snapshot, default_branches};
-use crate::db::repositories::{LibraryRepo, VersionRepo, BranchRepo};
+use crate::models::{Library, Snapshot, default_branches, default_branch_categories};
+use crate::db::repositories::{LibraryRepo, VersionRepo, BranchRepo, BranchCategoryRepo};
 
 /// Service for library operations with automatic version management
 pub struct LibraryService<'a> {
     library_repo: LibraryRepo<'a>,
     version_repo: VersionRepo<'a>,
     branch_repo: BranchRepo<'a>,
+    branch_category_repo: BranchCategoryRepo<'a>,
 }
 
 impl<'a> LibraryService<'a> {
@@ -19,10 +20,11 @@ impl<'a> LibraryService<'a> {
             library_repo: LibraryRepo::new(conn),
             version_repo: VersionRepo::new(conn),
             branch_repo: BranchRepo::new(conn),
+            branch_category_repo: BranchCategoryRepo::new(conn),
         }
     }
 
-    /// Create a new library, initial snapshot, and default branches
+    /// Create a new library, initial snapshot, default branch categories, and default branches
     pub fn create_library(&self, mut library: Library) -> Result<Library> {
         self.library_repo.create(&mut library)?;
         
@@ -31,7 +33,15 @@ impl<'a> LibraryService<'a> {
             let mut snapshot = Snapshot::new(lib_id, library.version, data);
             self.version_repo.create(&mut snapshot)?;
 
-            for mut branch in default_branches(lib_id) {
+            let mut category_ids = Vec::new();
+            for mut cat in default_branch_categories(lib_id) {
+                self.branch_category_repo.create(&mut cat)?;
+                if let Some(id) = cat.id {
+                    category_ids.push(id);
+                }
+            }
+            for (mut branch, cat_idx) in default_branches(lib_id) {
+                branch.category_id = category_ids.get(cat_idx).copied();
                 self.branch_repo.create(&mut branch)?;
             }
         }
