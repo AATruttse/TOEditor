@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use super::version::Versioned;
 
 /// A library contains multiple units and metadata
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -57,6 +58,16 @@ impl Library {
     /// Get total personnel count across all units
     pub fn total_personnel(&self) -> usize {
         self.units.iter().map(|u| u.total_personnel()).sum()
+    }
+}
+
+impl Versioned for Library {
+    fn version(&self) -> i64 {
+        self.version
+    }
+
+    fn increment_version(&mut self) {
+        self.version += 1;
     }
 }
 
@@ -242,5 +253,19 @@ mod tests {
         platoon.add_child(squad2);
         
         assert_eq!(platoon.total_personnel(), 2);
+    }
+
+    #[test]
+    fn test_versioned_trait() {
+        use crate::models::Versioned;
+        let mut lib = Library::new(
+            "Test".to_string(),
+            "US".to_string(),
+            "2003".to_string(),
+            "Author".to_string(),
+        );
+        assert_eq!(Versioned::version(&lib), 1);
+        Versioned::increment_version(&mut lib);
+        assert_eq!(Versioned::version(&lib), 2);
     }
 }

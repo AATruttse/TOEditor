@@ -15,6 +15,7 @@ impl Database {
     /// Open or create database at path
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let conn = Connection::open(path)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let db = Self { conn };
         db.run_migrations()?;
         Ok(db)
@@ -23,6 +24,7 @@ impl Database {
     /// Open in-memory database (for testing)
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let db = Self { conn };
         db.run_migrations()?;
         Ok(db)
@@ -233,6 +235,26 @@ mod tests {
         assert!(indexes.contains(&"idx_formation_levels_library_id".to_string()));
         assert!(indexes.contains(&"idx_branches_library_id".to_string()));
         assert!(indexes.contains(&"idx_branch_categories_library_id".to_string()));
+    }
+
+    #[test]
+    fn test_foreign_keys_enabled() {
+        let db = Database::open_in_memory().unwrap();
+        let fk_enabled: bool = db.conn()
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert!(fk_enabled, "Foreign keys should be enabled");
+    }
+
+    #[test]
+    fn test_foreign_key_enforcement() {
+        let db = Database::open_in_memory().unwrap();
+        // Trying to insert a unit with a non-existent library_id should fail
+        let result = db.conn().execute(
+            "INSERT INTO units (library_id, name, unit_type) VALUES (9999, 'Ghost', 'squad')",
+            [],
+        );
+        assert!(result.is_err(), "FK violation should be rejected");
     }
 
     #[test]

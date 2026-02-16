@@ -4,7 +4,6 @@ pub mod library;
 pub mod version;
 pub mod formation_level;
 pub mod branch;
-pub mod prelude;
 
 pub use library::{Library, Unit, Equipment, Personnel};
 pub use version::{Versioned, Snapshot};

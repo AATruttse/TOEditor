@@ -8,19 +8,20 @@ use std::panic;
 /// Custom panic handler
 fn setup_panic_handler() {
     panic::set_hook(Box::new(|panic_info| {
-        eprintln!("Panic occurred:");
+        log::error!("Panic occurred:");
         if let Some(location) = panic_info.location() {
-            eprintln!("  Location: {}:{}:{}", location.file(), location.line(), location.column());
+            log::error!("  Location: {}:{}:{}", location.file(), location.line(), location.column());
         }
         if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
-            eprintln!("  Message: {}", message);
+            log::error!("  Message: {}", message);
         } else if let Some(message) = panic_info.payload().downcast_ref::<String>() {
-            eprintln!("  Message: {}", message);
+            log::error!("  Message: {}", message);
         }
     }));
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
     setup_panic_handler();
     
     // Initialize translations if needed

@@ -1,7 +1,7 @@
 //! JSON export functionality
 
 use anyhow::Result;
-use crate::models::{Library, Snapshot};
+use crate::models::Library;
 use crate::db::repositories::VersionRepo;
 use std::path::Path;
 
@@ -62,7 +62,7 @@ pub fn export_json_with_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Library;
+    use crate::models::{Library, Snapshot};
     use tempfile::NamedTempFile;
 
     #[test]

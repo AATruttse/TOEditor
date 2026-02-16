@@ -4,13 +4,12 @@ slint::include_modules!();
 
 use anyhow::Result;
 use slint::{ComponentHandle, Model, ModelRc, VecModel, Weak, SharedString};
-use crate::i18n::{Language, TranslationManager};
+use crate::i18n::Language;
 use crate::models::{Library, StandardFormationLevel, CustomFormationLevel, Branch};
 use crate::services::LibraryService;
 use crate::export::{self, export_branches_to_path, import_branches_from_path, export_branch_categories_to_path, import_branch_categories_from_path, export_formation_levels_to_path, import_formation_levels_from_path, copy_branches_between_libraries, copy_branch_categories_between_libraries, copy_formation_levels_between_libraries};
 use crate::db::Database;
 use crate::db::repositories::{FormationLevelRepo, BranchRepo, BranchCategoryRepo};
-use crate::config::Settings;
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -218,8 +217,7 @@ struct AppState {
 /// Main application window structure
 pub struct AppMainWindow {
     window: MainWindow,
-    translation_manager: TranslationManager,
-    settings: Settings,
+    #[allow(dead_code)]
     state: Rc<RefCell<AppState>>,
 }
 
@@ -227,44 +225,28 @@ impl AppMainWindow {
     /// Create new main window
     pub fn new() -> Result<Self> {
         let window = MainWindow::new()?;
-        let mut translation_manager = TranslationManager::new();
-        let mut settings = crate::config::Settings::load().unwrap_or_default();
+        let settings = crate::config::Settings::load().unwrap_or_default();
         
         // Load language from settings
         let lang = Language::from_code(&settings.language);
-        translation_manager.set_language(lang);
         
         // Try to set initial translation
         let lang_code = lang.code();
         if let Err(e) = slint::select_bundled_translation(lang_code) {
-            eprintln!("Warning: Could not set initial translation: {}", e);
+            log::warn!("Could not set initial translation: {}", e);
         }
         
-        // Initialize database first
+        // Initialize database
         let db_path = settings.database_path.clone()
             .unwrap_or_else(|| crate::config::Settings::default_database_path().unwrap_or_default());
-        let database = if db_path.exists() || db_path.parent().map(|p| p.exists()).unwrap_or(false) {
-            match crate::db::Database::open(&db_path) {
-                Ok(db) => {
-                    eprintln!("[INIT] Database opened: {:?}", db_path);
-                    Some(db)
-                }
-                Err(e) => {
-                    eprintln!("[WARNING] Failed to open database: {}", e);
-                    None
-                }
+        let database = match crate::db::Database::open(&db_path) {
+            Ok(db) => {
+                log::info!("Database opened: {:?}", db_path);
+                Some(db)
             }
-        } else {
-            // Create new database
-            match crate::db::Database::open(&db_path) {
-                Ok(db) => {
-                    eprintln!("[INIT] Database created: {:?}", db_path);
-                    Some(db)
-                }
-                Err(e) => {
-                    eprintln!("[WARNING] Failed to create database: {}", e);
-                    None
-                }
+            Err(e) => {
+                log::warn!("Failed to open database: {}", e);
+                None
             }
         };
         
@@ -276,12 +258,12 @@ impl AppMainWindow {
         // Set initial theme from settings
         let theme = if settings.color_scheme == "dark" { "dark" } else { "light" };
         window.set_theme(theme.into());
-        eprintln!("[INIT] Initial theme set to: {}", theme);
+        log::info!("Initial theme set to: {}", theme);
         
-        // Set up UI callbacks FIRST, before any other initialization
-        eprintln!("[INIT] Setting up callbacks...");
-        setup_callbacks_with_state(&window, &mut translation_manager, &mut settings, state.clone())?;
-        eprintln!("[INIT] Callbacks set up successfully");
+        // Set up UI callbacks
+        log::info!("Setting up callbacks...");
+        setup_callbacks_with_state(&window, state.clone())?;
+        log::info!("Callbacks set up successfully");
         
         // Initialize toolbar
         init_toolbar(&window)?;
@@ -293,54 +275,13 @@ impl AppMainWindow {
         // Set initial language property and UI strings from Rust
         window.set_current_language(lang_code.into());
         apply_ui_translations(&window, lang_code);
-        eprintln!("[INIT] Initial language set to: {}", lang_code);
+        log::info!("Initial language set to: {}", lang_code);
         
         // Load libraries into UI
         refresh_libraries_list(&window, state.clone());
         
-        // Initialize database
-        let db_path = settings.database_path.clone()
-            .unwrap_or_else(|| crate::config::Settings::default_database_path().unwrap_or_default());
-        let database = if db_path.exists() || db_path.parent().map(|p| p.exists()).unwrap_or(false) {
-            match crate::db::Database::open(&db_path) {
-                Ok(db) => {
-                    eprintln!("[INIT] Database opened: {:?}", db_path);
-                    Some(db)
-                }
-                Err(e) => {
-                    eprintln!("[WARNING] Failed to open database: {}", e);
-                    None
-                }
-            }
-        } else {
-            // Create new database
-            match crate::db::Database::open(&db_path) {
-                Ok(db) => {
-                    eprintln!("[INIT] Database created: {:?}", db_path);
-                    Some(db)
-                }
-                Err(e) => {
-                    eprintln!("[WARNING] Failed to create database: {}", e);
-                    None
-                }
-            }
-        };
-        
-        let state = Rc::new(RefCell::new(AppState {
-            database,
-            current_library: None,
-        }));
-        
-        // Store state reference for callbacks
-        let state_for_callbacks = state.clone();
-        
-        // Re-setup callbacks with state access
-        setup_callbacks_with_state(&window, &mut translation_manager, &mut settings, state_for_callbacks)?;
-        
         Ok(Self { 
             window, 
-            translation_manager, 
-            settings,
             state,
         })
     }
@@ -359,8 +300,6 @@ impl AppMainWindow {
 /// Set up all UI callbacks with application state
 fn setup_callbacks_with_state(
     window: &MainWindow,
-    _translation_manager: &mut TranslationManager,
-    settings: &mut crate::config::Settings,
     state: Rc<RefCell<AppState>>,
 ) -> Result<()> {
     let weak_window = window.as_weak();
@@ -375,85 +314,42 @@ fn setup_callbacks_with_state(
     window.on_switch_language({
         let weak = weak_window.clone();
         move |lang_code: SharedString| {
-            // Write to both stderr and a log file for debugging
-            let debug_msg = format!("[DEBUG] ===== Language switch callback INVOKED with: {} =====\n", lang_code);
-            eprint!("{}", debug_msg);
-            
-            // Also write to a log file
-            if let Err(e) = std::fs::write("language_switch.log", &debug_msg) {
-                eprintln!("[WARNING] Could not write to log file: {}", e);
-            }
+            log::debug!("Language switch to: {}", lang_code);
             
             if let Some(window) = weak.upgrade() {
                 let lang = Language::from_code(&lang_code.to_string());
-                eprintln!("[DEBUG] Parsed language: {} ({})", lang.name(), lang.code());
                 
                 // Update settings
-                let mut settings = match crate::config::Settings::load() {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!("[ERROR] Failed to load settings: {}", e);
-                        crate::config::Settings::default()
-                    }
-                };
+                let mut settings = crate::config::Settings::load().unwrap_or_default();
                 settings.language = lang.code().to_string();
-                
-                match settings.save() {
-                    Ok(_) => eprintln!("[DEBUG] Settings saved successfully"),
-                    Err(e) => eprintln!("[ERROR] Failed to save settings: {}", e),
+                if let Err(e) = settings.save() {
+                    log::error!("Failed to save settings: {}", e);
                 }
                 
                 // Update the language property
                 window.set_current_language(lang_code.clone());
-                eprintln!("[DEBUG] Language property set to: {}", lang_code);
                 
-                // Try to switch translation if bundled translations are available
-                match slint::select_bundled_translation(&lang_code.to_string()) {
-                    Ok(_) => eprintln!("[DEBUG] Translation API call succeeded"),
-                    Err(e) => eprintln!("[WARNING] Translation API call failed (expected if not bundled): {}", e),
+                // Try to switch bundled translation
+                if let Err(e) = slint::select_bundled_translation(&lang_code.to_string()) {
+                    log::warn!("Translation API: {}", e);
                 }
                 
-                // Update title and all UI strings from Rust
+                // Update title and all UI strings
                 let version = env!("CARGO_PKG_VERSION");
-                let lang_name = lang.name();
-                let new_title = format!("TOEditor v{} [{}]", version, lang_name);
-                window.set_window_title(new_title.clone().into());
+                let new_title = format!("TOEditor v{} [{}]", version, lang.name());
+                window.set_window_title(new_title.into());
                 apply_ui_translations(&window, &lang_code.to_string());
                 window.window().request_redraw();
-                eprintln!("[DEBUG] Window title updated to: {}", new_title);
-                
-                eprintln!("[DEBUG] ===== Language switch COMPLETE =====");
-            } else {
-                eprintln!("[ERROR] ===== FAILED: Could not upgrade weak window reference =====");
             }
         }
     });
     
-    // Also register separate callbacks for each language as a workaround
-    // These will be called directly from MenuItem, and then invoke the main callback
+    // Per-language callbacks delegate to the main switch_language callback
     window.on_switch_to_english({
         let weak = weak_window.clone();
         move || {
-            let debug_msg = "[DEBUG] ===== switch-to-english callback INVOKED =====\n";
-            eprint!("{}", debug_msg);
-            let _ = std::fs::write("language_switch.log", debug_msg);
-            
             if let Some(window) = weak.upgrade() {
-                // Directly call the language switch logic
-                let lang_code: SharedString = "en".into();
-                window.invoke_switch_language(lang_code.clone());
-                
-                // Also manually trigger the logic as fallback
-                let mut settings = crate::config::Settings::load().unwrap_or_default();
-                settings.language = "en".to_string();
-                let _ = settings.save();
-                window.set_current_language(lang_code);
-                
-                let version = env!("CARGO_PKG_VERSION");
-                window.set_window_title(format!("TOEditor v{} [English]", version).into());
-                apply_ui_translations(&window, "en");
-                window.window().request_redraw();
-                eprintln!("[DEBUG] English language set via direct callback");
+                window.invoke_switch_language("en".into());
             }
         }
     });
@@ -461,40 +357,19 @@ fn setup_callbacks_with_state(
     window.on_switch_to_russian({
         let weak = weak_window.clone();
         move || {
-            let debug_msg = "[DEBUG] ===== switch-to-russian callback INVOKED =====\n";
-            eprint!("{}", debug_msg);
-            let _ = std::fs::write("language_switch.log", debug_msg);
-            
             if let Some(window) = weak.upgrade() {
-                // Directly call the language switch logic
-                let lang_code: SharedString = "ru".into();
-                window.invoke_switch_language(lang_code.clone());
-                
-                // Also manually trigger the logic as fallback
-                let mut settings = crate::config::Settings::load().unwrap_or_default();
-                settings.language = "ru".to_string();
-                let _ = settings.save();
-                window.set_current_language(lang_code);
-                
-                let version = env!("CARGO_PKG_VERSION");
-                window.set_window_title(format!("TOEditor v{} [Русский]", version).into());
-                apply_ui_translations(&window, "ru");
-                window.window().request_redraw();
-                eprintln!("[DEBUG] Russian language set via direct callback");
+                window.invoke_switch_language("ru".into());
             }
         }
     });
-    
-    eprintln!("[DEBUG] All language switch callbacks registered successfully");
     
     // File menu actions
     window.on_file_exit({
         let weak = weak_window.clone();
         move || {
             if let Some(window) = weak.upgrade() {
-                eprintln!("[DEBUG] File > Exit called");
-                window.hide().unwrap_or_default();
-                std::process::exit(0);
+                log::debug!("File > Exit called");
+                let _ = window.hide();
             }
         }
     });
@@ -502,7 +377,7 @@ fn setup_callbacks_with_state(
     // Library management handlers
     let weak_window = window.as_weak();
     window.on_file_new_library(move || {
-        eprintln!("[DEBUG] File > New Library");
+        log::debug!("File > New Library");
         if let Some(window) = weak_window.upgrade() {
             show_library_dialog(&window, "new", -1);
         }
@@ -512,7 +387,7 @@ fn setup_callbacks_with_state(
     let state_clone = state.clone();
     let weak_window = window.as_weak();
     window.on_library_dialog_accepted(move |name: SharedString, country: SharedString, era: SharedString, author: SharedString, tags: SharedString, library_id: i32| {
-        eprintln!("[DEBUG] Library dialog accepted: name={}, country={}, era={}, author={}, tags={}, id={}", 
+        log::debug!("Library dialog accepted: name={}, country={}, era={}, author={}, tags={}, id={}", 
                   name, country, era, author, tags, library_id);
         
         // Parse tags first
@@ -546,7 +421,7 @@ fn setup_callbacks_with_state(
                     };
                     match service.create_library(library) {
                         Ok(lib) => {
-                            eprintln!("[INFO] Library created: {} (ID: {:?})", lib.name, lib.id);
+                            log::info!("Library created: {} (ID: {:?})", lib.name, lib.id);
                             drop(state);
                             let lib_id = lib.id.map(|x| x as i32).unwrap_or(-1);
                             state_clone.borrow_mut().current_library = Some(lib.clone());
@@ -556,7 +431,7 @@ fn setup_callbacks_with_state(
                                 refresh_libraries_list(&window, state_clone.clone());
                             }
                         }
-                        Err(e) => eprintln!("[ERROR] Failed to create library: {}", e),
+                        Err(e) => log::error!("Failed to create library: {}", e),
                     }
                 } else {
                     // Update existing library
@@ -568,7 +443,7 @@ fn setup_callbacks_with_state(
                         lib.tags = tags_vec.clone();
                         match service.save_library(lib.clone(), false) {
                             Ok(_) => {
-                                eprintln!("[INFO] Library updated successfully");
+                                log::info!("Library updated successfully");
                                 drop(state);
                                 let lib_id = lib.id.map(|x| x as i32).unwrap_or(-1);
                                 state_clone.borrow_mut().current_library = Some(lib);
@@ -578,24 +453,24 @@ fn setup_callbacks_with_state(
                                     refresh_libraries_list(&window, state_clone.clone());
                                 }
                             }
-                            Err(e) => eprintln!("[ERROR] Failed to update library: {}", e),
+                            Err(e) => log::error!("Failed to update library: {}", e),
                         }
                     }
                 }
             } else {
-                eprintln!("[ERROR] Database not initialized");
+                log::error!("Database not initialized");
             }
         }
     });
     
     window.on_library_dialog_cancelled(|| {
-        eprintln!("[DEBUG] Library dialog cancelled");
+        log::debug!("Library dialog cancelled");
     });
     
     let state_clone = state.clone();
     let weak_window = window.as_weak();
     window.on_file_open_library(move || {
-        eprintln!("[DEBUG] File > Open Library");
+        log::debug!("File > Open Library");
         // Refresh libraries list
         if let Some(window) = weak_window.upgrade() {
             refresh_libraries_list(&window, state_clone.clone());
@@ -630,7 +505,6 @@ fn setup_callbacks_with_state(
         
         // Position menu near the clicked library item
         // Calculate position based on item index: each item is 28px high, sidebar header is ~50px
-        use slint::ComponentHandle;
         let menu_window = menu.window();
         if let Some(main_window) = weak_window.upgrade() {
             let main_window_handle = main_window.window();
@@ -676,7 +550,7 @@ fn setup_callbacks_with_state(
             if let Some(m) = weak_menu3.upgrade() {
                 m.hide().ok();
             }
-            eprintln!("[DEBUG] Library > View history");
+            log::debug!("Library > View history");
         });
         menu.on_delete_library(move || {
             if let Some(m) = weak_menu4.upgrade() {
@@ -695,14 +569,14 @@ fn setup_callbacks_with_state(
     let state_clone = state.clone();
     let weak_window = window.as_weak();
     window.on_library_selected(move |library_id| {
-        eprintln!("[DEBUG] Library selected: {}", library_id);
+        log::debug!("Library selected: {}", library_id);
         let has_db = {
             let state = state_clone.borrow();
             state.database.is_some()
         };
         
         if !has_db {
-            eprintln!("[ERROR] Database not initialized");
+            log::error!("Database not initialized");
             return;
         }
         
@@ -712,7 +586,7 @@ fn setup_callbacks_with_state(
                 let service = LibraryService::new(db.conn());
                 match service.get_library(library_id as i64) {
                     Ok(Some(lib)) => {
-                        eprintln!("[INFO] Loaded library: {}", lib.name);
+                        log::info!("Loaded library: {}", lib.name);
                         drop(state);
                         state_clone.borrow_mut().current_library = Some(lib.clone());
                         if let Some(window) = weak_window.upgrade() {
@@ -721,7 +595,7 @@ fn setup_callbacks_with_state(
                             refresh_formations_list(&window);
                         }
                     }
-                    Err(e) => eprintln!("[ERROR] Failed to load library: {}", e),
+                    Err(e) => log::error!("Failed to load library: {}", e),
                     _ => {}
                 }
             }
@@ -800,13 +674,13 @@ fn setup_callbacks_with_state(
     });
     
     window.on_file_recent_libraries(|| {
-        eprintln!("[DEBUG] File > Recent Libraries");
+        log::debug!("File > Recent Libraries");
         // TODO: Show list of recently opened libraries
     });
     
     let state_clone = state.clone();
     window.on_file_save_library(move || {
-        eprintln!("[DEBUG] File > Save Library");
+        log::debug!("File > Save Library");
         let lib_to_save = {
             let state = state_clone.borrow();
             state.current_library.clone()
@@ -819,75 +693,75 @@ fn setup_callbacks_with_state(
                 match service.save_library(lib, true) {
                     Ok(_) => {
                         drop(state);
-                        eprintln!("[INFO] Library saved successfully");
+                        log::info!("Library saved successfully");
                     }
                     Err(e) => {
                         drop(state);
-                        eprintln!("[ERROR] Failed to save library: {}", e);
+                        log::error!("Failed to save library: {}", e);
                     }
                 }
             } else {
-                eprintln!("[ERROR] Database not initialized");
+                log::error!("Database not initialized");
             }
         } else {
-            eprintln!("[WARNING] No library to save. Create or open a library first.");
+            log::warn!("No library to save. Create or open a library first.");
         }
     });
     
     window.on_file_save_library_as(|| {
-        eprintln!("[DEBUG] File > Save Library As");
+        log::debug!("File > Save Library As");
         // TODO: Show file dialog to save as JSON
     });
     
     let state_clone = state.clone();
     window.on_file_import_library(move || {
-        eprintln!("[DEBUG] File > Import Library");
+        log::debug!("File > Import Library");
         // TODO: Show file dialog to import JSON
         // For now, demonstrate import from a test file
         let state = state_clone.borrow();
         if state.database.is_some() {
             // Example: import from temp file
-            eprintln!("[INFO] Import functionality - TODO: implement file dialog");
+            log::info!("Import functionality - TODO: implement file dialog");
         }
     });
     
-    window.on_file_import_formation(|| { eprintln!("[DEBUG] File > Import Formation"); });
+    window.on_file_import_formation(|| { log::debug!("File > Import Formation"); });
     
     let state_clone = state.clone();
     window.on_file_export_library(move || {
-        eprintln!("[DEBUG] File > Export Library");
+        log::debug!("File > Export Library");
         let state = state_clone.borrow();
         if let Some(ref lib) = state.current_library {
             // Export to temp directory for now
             let path = std::env::temp_dir().join(format!("{}.json", lib.name));
             match export::export_json(lib, &path) {
-                Ok(_) => eprintln!("[INFO] Library exported to: {:?}", path),
-                Err(e) => eprintln!("[ERROR] Failed to export library: {}", e),
+                Ok(_) => log::info!("Library exported to: {:?}", path),
+                Err(e) => log::error!("Failed to export library: {}", e),
             }
         } else {
-            eprintln!("[WARNING] No library to export. Create or open a library first.");
+            log::warn!("No library to export. Create or open a library first.");
         }
     });
     
-    window.on_file_export_formation(|| { eprintln!("[DEBUG] File > Export Formation"); });
-    window.on_file_export_spreadsheet(|| { eprintln!("[DEBUG] File > Export Spreadsheet"); });
-    window.on_file_export_diagram(|| { eprintln!("[DEBUG] File > Export Diagram"); });
+    window.on_file_export_formation(|| { log::debug!("File > Export Formation"); });
+    window.on_file_export_spreadsheet(|| { log::debug!("File > Export Spreadsheet"); });
+    window.on_file_export_diagram(|| { log::debug!("File > Export Diagram"); });
     
     // Edit menu actions
-    window.on_edit_find(|| { eprintln!("[DEBUG] Edit > Find"); });
-    window.on_edit_find_replace(|| { eprintln!("[DEBUG] Edit > Find and Replace"); });
-    window.on_edit_undo(|| { eprintln!("[DEBUG] Edit > Undo"); });
-    window.on_edit_redo(|| { eprintln!("[DEBUG] Edit > Redo"); });
-    window.on_edit_cut(|| { eprintln!("[DEBUG] Edit > Cut"); });
-    window.on_edit_copy(|| { eprintln!("[DEBUG] Edit > Copy"); });
-    window.on_edit_paste(|| { eprintln!("[DEBUG] Edit > Paste"); });
-    window.on_edit_delete(|| { eprintln!("[DEBUG] Edit > Delete"); });
-    window.on_edit_add_formation(|| { eprintln!("[DEBUG] Edit > Add Formation"); });
-    window.on_edit_edit_properties(|| { eprintln!("[DEBUG] Edit > Edit Properties"); });
+    window.on_edit_find(|| { log::debug!("Edit > Find"); });
+    window.on_edit_find_replace(|| { log::debug!("Edit > Find and Replace"); });
+    window.on_edit_undo(|| { log::debug!("Edit > Undo"); });
+    window.on_edit_redo(|| { log::debug!("Edit > Redo"); });
+    window.on_edit_cut(|| { log::debug!("Edit > Cut"); });
+    window.on_edit_copy(|| { log::debug!("Edit > Copy"); });
+    window.on_edit_paste(|| { log::debug!("Edit > Paste"); });
+    window.on_edit_delete(|| { log::debug!("Edit > Delete"); });
+    window.on_edit_add_formation(|| { log::debug!("Edit > Add Formation"); });
+    window.on_edit_edit_properties(|| { log::debug!("Edit > Edit Properties"); });
     
     // Library menu actions
-    window.on_library_positions_editor(|| { eprintln!("[DEBUG] Library > Positions Editor"); });
-    window.on_library_equipment_editor(|| { eprintln!("[DEBUG] Library > Equipment Editor"); });
+    window.on_library_positions_editor(|| { log::debug!("Library > Positions Editor"); });
+    window.on_library_equipment_editor(|| { log::debug!("Library > Equipment Editor"); });
     
     // Formation levels editor (separate window)
     let state_formation = state.clone();
@@ -899,12 +773,12 @@ fn setup_callbacks_with_state(
                 Some(lib) => match lib.id {
                     Some(id) => (id, lib.name.clone()),
                     None => {
-                        eprintln!("[WARNING] Library has no id");
+                        log::warn!("Library has no id");
                         return;
                     }
                 },
                 None => {
-                    eprintln!("[WARNING] No library selected");
+                    log::warn!("No library selected");
                     return;
                 }
             }
@@ -926,12 +800,12 @@ fn setup_callbacks_with_state(
                 Some(lib) => match lib.id {
                     Some(id) => (id, lib.name.clone()),
                     None => {
-                        eprintln!("[WARNING] Library has no id");
+                        log::warn!("Library has no id");
                         return;
                     }
                 },
                 None => {
-                    eprintln!("[WARNING] No library selected");
+                    log::warn!("No library selected");
                     return;
                 }
             }
@@ -953,12 +827,12 @@ fn setup_callbacks_with_state(
                 Some(lib) => match lib.id {
                     Some(id) => (id, lib.name.clone()),
                     None => {
-                        eprintln!("[WARNING] Library has no id");
+                        log::warn!("Library has no id");
                         return;
                     }
                 },
                 None => {
-                    eprintln!("[WARNING] No library selected");
+                    log::warn!("No library selected");
                     return;
                 }
             }
@@ -974,7 +848,7 @@ fn setup_callbacks_with_state(
     let state_clone = state.clone();
     let weak_window = window.as_weak();
     window.on_library_properties(move || {
-        eprintln!("[DEBUG] Library > Properties");
+        log::debug!("Library > Properties");
         let state = state_clone.borrow();
         if let Some(ref lib) = state.current_library {
                 if let Some(lib_id) = lib.id {
@@ -984,34 +858,34 @@ fn setup_callbacks_with_state(
                 }
             }
         } else {
-            eprintln!("[WARNING] No library selected");
+            log::warn!("No library selected");
         }
     });
     
-    window.on_library_manage_tags(|| { eprintln!("[DEBUG] Library > Manage Tags"); });
-    window.on_library_export_library(|| { eprintln!("[DEBUG] Library > Export Library"); });
-    window.on_library_view_history(|| { eprintln!("[DEBUG] Library > View History"); });
-    window.on_library_create_snapshot(|| { eprintln!("[DEBUG] Library > Create Snapshot"); });
-    window.on_library_compare_versions(|| { eprintln!("[DEBUG] Library > Compare Versions"); });
-    window.on_library_revert_to_version(|| { eprintln!("[DEBUG] Library > Revert to Version"); });
+    window.on_library_manage_tags(|| { log::debug!("Library > Manage Tags"); });
+    window.on_library_export_library(|| { log::debug!("Library > Export Library"); });
+    window.on_library_view_history(|| { log::debug!("Library > View History"); });
+    window.on_library_create_snapshot(|| { log::debug!("Library > Create Snapshot"); });
+    window.on_library_compare_versions(|| { log::debug!("Library > Compare Versions"); });
+    window.on_library_revert_to_version(|| { log::debug!("Library > Revert to Version"); });
     
     // Library delete: show confirmation dialog, then delete on confirm
     let state_clone = state.clone();
     let weak_window = window.as_weak();
     window.on_library_delete(move || {
-        eprintln!("[DEBUG] Library > Delete");
+        log::debug!("Library > Delete");
         let (lib_id, lib_name) = {
             let state = state_clone.borrow();
             match &state.current_library {
                 Some(lib) => match lib.id {
                     Some(id) => (id, lib.name.clone()),
                     None => {
-                        eprintln!("[WARNING] Library has no id");
+                        log::warn!("Library has no id");
                         return;
                     }
                 },
                 None => {
-                    eprintln!("[WARNING] No library selected");
+                    log::warn!("No library selected");
                     return;
                 }
             }
@@ -1024,7 +898,7 @@ fn setup_callbacks_with_state(
         let dialog = match ConfirmDeleteDialog::new() {
             Ok(d) => d,
             Err(e) => {
-                eprintln!("[ERROR] Failed to create confirm dialog: {}", e);
+                log::error!("Failed to create confirm dialog: {}", e);
                 return;
             }
         };
@@ -1047,7 +921,7 @@ fn setup_callbacks_with_state(
                     match service.delete_library(lib_id) {
                         Ok(_) => true,
                         Err(e) => {
-                            eprintln!("[ERROR] Failed to delete library: {}", e);
+                            log::error!("Failed to delete library: {}", e);
                             false
                         }
                     }
@@ -1056,7 +930,7 @@ fn setup_callbacks_with_state(
                 }
             };
             if delete_ok {
-                eprintln!("[INFO] Library deleted successfully");
+                log::info!("Library deleted successfully");
                 state_for_confirm.borrow_mut().current_library = None;
                 if let Some(window) = weak_window_confirm.upgrade() {
                     window.set_current_library_name("".into());
@@ -1074,29 +948,29 @@ fn setup_callbacks_with_state(
     });
     
     // Unit menu actions
-    window.on_unit_add_child(|| { eprintln!("[DEBUG] Unit > Add Child"); });
-    window.on_unit_delete(|| { eprintln!("[DEBUG] Unit > Delete"); });
-    window.on_unit_move_up(|| { eprintln!("[DEBUG] Unit > Move Up"); });
-    window.on_unit_move_down(|| { eprintln!("[DEBUG] Unit > Move Down"); });
-    window.on_unit_summary_table(|| { eprintln!("[DEBUG] Unit > Summary Table"); });
-    window.on_unit_export(|| { eprintln!("[DEBUG] Unit > Export"); });
-    window.on_unit_view_history(|| { eprintln!("[DEBUG] Unit > View History"); });
-    window.on_unit_create_snapshot(|| { eprintln!("[DEBUG] Unit > Create Snapshot"); });
-    window.on_unit_compare_versions(|| { eprintln!("[DEBUG] Unit > Compare Versions"); });
-    window.on_unit_revert_to_version(|| { eprintln!("[DEBUG] Unit > Revert to Version"); });
+    window.on_unit_add_child(|| { log::debug!("Unit > Add Child"); });
+    window.on_unit_delete(|| { log::debug!("Unit > Delete"); });
+    window.on_unit_move_up(|| { log::debug!("Unit > Move Up"); });
+    window.on_unit_move_down(|| { log::debug!("Unit > Move Down"); });
+    window.on_unit_summary_table(|| { log::debug!("Unit > Summary Table"); });
+    window.on_unit_export(|| { log::debug!("Unit > Export"); });
+    window.on_unit_view_history(|| { log::debug!("Unit > View History"); });
+    window.on_unit_create_snapshot(|| { log::debug!("Unit > Create Snapshot"); });
+    window.on_unit_compare_versions(|| { log::debug!("Unit > Compare Versions"); });
+    window.on_unit_revert_to_version(|| { log::debug!("Unit > Revert to Version"); });
     
     // View menu actions
-    window.on_view_table(|| { eprintln!("[DEBUG] View > Table"); });
-    window.on_view_diagram(|| { eprintln!("[DEBUG] View > Diagram"); });
-    window.on_view_table_and_diagram(|| { eprintln!("[DEBUG] View > Table and Diagram"); });
-    window.on_view_symbols_nato(|| { eprintln!("[DEBUG] View > Symbols NATO"); });
-    window.on_view_symbols_russia(|| { eprintln!("[DEBUG] View > Symbols Russia"); });
-    window.on_view_load_symbols(|| { eprintln!("[DEBUG] View > Load Symbols"); });
+    window.on_view_table(|| { log::debug!("View > Table"); });
+    window.on_view_diagram(|| { log::debug!("View > Diagram"); });
+    window.on_view_table_and_diagram(|| { log::debug!("View > Table and Diagram"); });
+    window.on_view_symbols_nato(|| { log::debug!("View > Symbols NATO"); });
+    window.on_view_symbols_russia(|| { log::debug!("View > Symbols Russia"); });
+    window.on_view_load_symbols(|| { log::debug!("View > Load Symbols"); });
     // Theme switching callback
     let weak_window = window.as_weak();
     window.on_switch_theme(move |theme: slint::SharedString| {
         let theme_str = theme.to_string();
-        eprintln!("[DEBUG] Switching theme to: {}", theme_str);
+        log::debug!("Switching theme to: {}", theme_str);
         
         if let Some(w) = weak_window.upgrade() {
             w.set_theme(theme.clone());
@@ -1108,40 +982,39 @@ fn setup_callbacks_with_state(
             };
             settings.color_scheme = theme_str.clone();
             if let Err(e) = settings.save() {
-                eprintln!("[ERROR] Failed to save theme setting: {}", e);
+                log::error!("Failed to save theme setting: {}", e);
             } else {
-                eprintln!("[INFO] Theme saved: {}", theme_str);
+                log::info!("Theme saved: {}", theme_str);
             }
         }
     });
-    window.on_view_show_images(|| { eprintln!("[DEBUG] View > Show Images"); });
-    window.on_view_zoom_in(|| { eprintln!("[DEBUG] View > Zoom In"); });
-    window.on_view_zoom_out(|| { eprintln!("[DEBUG] View > Zoom Out"); });
-    window.on_view_zoom_reset(|| { eprintln!("[DEBUG] View > Zoom Reset"); });
-    window.on_view_refresh(|| { eprintln!("[DEBUG] View > Refresh"); });
+    window.on_view_show_images(|| { log::debug!("View > Show Images"); });
+    window.on_view_zoom_in(|| { log::debug!("View > Zoom In"); });
+    window.on_view_zoom_out(|| { log::debug!("View > Zoom Out"); });
+    window.on_view_zoom_reset(|| { log::debug!("View > Zoom Reset"); });
+    window.on_view_refresh(|| { log::debug!("View > Refresh"); });
     
     // Tools menu actions
-    window.on_tools_settings(|| { eprintln!("[DEBUG] Tools > Settings"); });
-    window.on_tools_language(|| { eprintln!("[DEBUG] Tools > Language"); });
-    window.on_tools_data_paths(|| { eprintln!("[DEBUG] Tools > Data Paths"); });
-    window.on_tools_reset_settings(|| { eprintln!("[DEBUG] Tools > Reset Settings"); });
+    window.on_tools_settings(|| { log::debug!("Tools > Settings"); });
+    window.on_tools_language(|| { log::debug!("Tools > Language"); });
+    window.on_tools_data_paths(|| { log::debug!("Tools > Data Paths"); });
+    window.on_tools_reset_settings(|| { log::debug!("Tools > Reset Settings"); });
     
     // Help menu actions
-    window.on_help_user_guide(|| { eprintln!("[DEBUG] Help > User Guide"); });
-    window.on_help_about(|| { eprintln!("[DEBUG] Help > About"); });
-    window.on_help_check_updates(|| { eprintln!("[DEBUG] Help > Check Updates"); });
+    window.on_help_user_guide(|| { log::debug!("Help > User Guide"); });
+    window.on_help_about(|| { log::debug!("Help > About"); });
+    window.on_help_check_updates(|| { log::debug!("Help > Check Updates"); });
     
     Ok(())
 }
 
 /// Show library dialog for creating new library
 fn show_library_dialog(window: &MainWindow, _mode: &str, library_id: i32) {
-    use slint::ComponentHandle;
     
     let dialog = match LibraryDialog::new() {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("[ERROR] Failed to create library dialog: {}", e);
+            log::error!("Failed to create library dialog: {}", e);
             return;
         }
     };
@@ -1187,12 +1060,11 @@ fn show_library_dialog(window: &MainWindow, _mode: &str, library_id: i32) {
 
 /// Show library dialog for editing existing library
 fn show_library_dialog_for_edit(window: &MainWindow, library_id: i32, state: Rc<RefCell<AppState>>) {
-    use slint::ComponentHandle;
     
     let dialog = match LibraryDialog::new() {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("[ERROR] Failed to create library dialog: {}", e);
+            log::error!("Failed to create library dialog: {}", e);
             return;
         }
     };
@@ -1245,13 +1117,12 @@ fn show_library_dialog_for_edit(window: &MainWindow, library_id: i32, state: Rc<
 
 /// Open the Branches editor window for the given library.
 fn show_branches_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &str, lang: &str) {
-    use slint::ComponentHandle;
     let (branches, other_library_items, source_library_ids, category_items) = {
         let st = state.borrow();
         let db = match st.database.as_ref() {
             Some(d) => d,
             None => {
-                eprintln!("[ERROR] Database not initialized");
+                log::error!("Database not initialized");
                 return;
             }
         };
@@ -1259,7 +1130,7 @@ fn show_branches_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &st
         let mut branches = match branch_repo.list_by_library(lib_id) {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("[ERROR] Failed to load branches: {}", e);
+                log::error!("Failed to load branches: {}", e);
                 return;
             }
         };
@@ -1320,7 +1191,7 @@ fn show_branches_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &st
     let editor = match BranchesEditor::new() {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("[ERROR] Failed to create Branches editor: {}", e);
+            log::error!("Failed to create Branches editor: {}", e);
             return;
         }
     };
@@ -1462,7 +1333,7 @@ fn show_branches_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &st
             .collect();
         if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).save_file() {
             if let Err(e) = export_branches_to_path(path.as_path(), &branches) {
-                eprintln!("[ERROR] Export branches: {}", e);
+                log::error!("Export branches: {}", e);
             }
         }
     });
@@ -1493,7 +1364,7 @@ fn show_branches_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &st
                         }
                     }
                 }
-                Err(e) => eprintln!("[ERROR] Import branches: {}", e),
+                Err(e) => log::error!("Import branches: {}", e),
             }
         }
     });
@@ -1512,7 +1383,7 @@ fn show_branches_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &st
         if let Some(ref db) = st.database {
             let branch_repo = BranchRepo::new(db.conn());
             if let Err(e) = copy_branches_between_libraries(&branch_repo, source_id, lib_id) {
-                eprintln!("[ERROR] Copy branches: {}", e);
+                log::error!("Copy branches: {}", e);
                 return;
             }
             drop(st);
@@ -1547,13 +1418,12 @@ fn show_branches_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &st
 
 /// Open the Branch categories editor window for the given library.
 fn show_branch_categories_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &str, lang: &str) {
-    use slint::ComponentHandle;
     let (categories, other_library_items, source_library_ids) = {
         let st = state.borrow();
         let db = match st.database.as_ref() {
             Some(d) => d,
             None => {
-                eprintln!("[ERROR] Database not initialized");
+                log::error!("Database not initialized");
                 return;
             }
         };
@@ -1590,7 +1460,7 @@ fn show_branch_categories_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_
     let editor = match BranchCategoriesEditor::new() {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("[ERROR] Failed to create Branch categories editor: {}", e);
+            log::error!("Failed to create Branch categories editor: {}", e);
             return;
         }
     };
@@ -1694,7 +1564,7 @@ fn show_branch_categories_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_
             .collect();
         if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).save_file() {
             if let Err(e) = export_branch_categories_to_path(path.as_path(), &categories) {
-                eprintln!("[ERROR] Export branch categories: {}", e);
+                log::error!("Export branch categories: {}", e);
             }
         }
     });
@@ -1724,7 +1594,7 @@ fn show_branch_categories_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_
                         }
                     }
                 }
-                Err(e) => eprintln!("[ERROR] Import branch categories: {}", e),
+                Err(e) => log::error!("Import branch categories: {}", e),
             }
         }
     });
@@ -1743,7 +1613,7 @@ fn show_branch_categories_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_
         if let Some(ref db) = st.database {
             let cat_repo = BranchCategoryRepo::new(db.conn());
             if let Err(e) = copy_branch_categories_between_libraries(&cat_repo, source_id, lib_id) {
-                eprintln!("[ERROR] Copy branch categories: {}", e);
+                log::error!("Copy branch categories: {}", e);
                 return;
             }
             drop(st);
@@ -1777,13 +1647,12 @@ fn show_branch_categories_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_
 
 /// Open the Formation levels editor window for the given library.
 fn show_formation_levels_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_name: &str, lang: &str) {
-    use slint::ComponentHandle;
     let (levels, other_library_items, source_library_ids) = {
         let st = state.borrow();
         let db = match st.database.as_ref() {
             Some(d) => d,
             None => {
-                eprintln!("[ERROR] Database not initialized");
+                log::error!("Database not initialized");
                 return;
             }
         };
@@ -1791,7 +1660,7 @@ fn show_formation_levels_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_n
         let levels = match level_repo.list_by_library(lib_id) {
             Ok(l) => l,
             Err(e) => {
-                eprintln!("[ERROR] Failed to load formation levels: {}", e);
+                log::error!("Failed to load formation levels: {}", e);
                 return;
             }
         };
@@ -1828,7 +1697,7 @@ fn show_formation_levels_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_n
     let editor = match FormationLevelsEditor::new() {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("[ERROR] Failed to create Formation levels editor: {}", e);
+            log::error!("Failed to create Formation levels editor: {}", e);
             return;
         }
     };
@@ -1974,7 +1843,7 @@ fn show_formation_levels_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_n
                             .collect();
         if let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).save_file() {
             if let Err(e) = export_formation_levels_to_path(path.as_path(), &levels) {
-                eprintln!("[ERROR] Export formation levels: {}", e);
+                log::error!("Export formation levels: {}", e);
             }
         }
     });
@@ -2006,7 +1875,7 @@ fn show_formation_levels_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_n
                         }
                     }
                 }
-                Err(e) => eprintln!("[ERROR] Import formation levels: {}", e),
+                Err(e) => log::error!("Import formation levels: {}", e),
             }
         }
     });
@@ -2025,7 +1894,7 @@ fn show_formation_levels_editor(state: Rc<RefCell<AppState>>, lib_id: i64, lib_n
         if let Some(ref db) = st.database {
             let level_repo = FormationLevelRepo::new(db.conn());
             if let Err(e) = copy_formation_levels_between_libraries(&level_repo, source_id, lib_id) {
-                eprintln!("[ERROR] Copy formation levels: {}", e);
+                log::error!("Copy formation levels: {}", e);
                 return;
             }
             drop(st);
@@ -2116,10 +1985,10 @@ fn refresh_libraries_list(window: &MainWindow, state: Rc<RefCell<AppState>>) {
                     })
                     .collect();
                 window.set_libraries(ModelRc::new(VecModel::from(library_items)));
-                eprintln!("[INFO] Refreshed libraries list: {} libraries", libraries.len());
+                log::info!("Refreshed libraries list: {} libraries", libraries.len());
             }
             Err(e) => {
-                eprintln!("[ERROR] Failed to load libraries: {}", e);
+                log::error!("Failed to load libraries: {}", e);
             }
         }
     }

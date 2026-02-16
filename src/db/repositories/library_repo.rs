@@ -130,6 +130,7 @@ impl<'a> LibraryRepo<'a> {
 
     /// Update library
     pub fn update(&self, library: &Library) -> Result<()> {
+        let id = library.id.ok_or_else(|| anyhow::anyhow!("Cannot update library without id"))?;
         let now = chrono::Utc::now().timestamp();
         self.conn.execute(
             "UPDATE libraries SET name = ?1, country = ?2, era = ?3, author = ?4, version = ?5, tags = ?6, updated_at = ?7
@@ -142,7 +143,7 @@ impl<'a> LibraryRepo<'a> {
                 library.version,
                 serde_json::to_string(&library.tags)?,
                 now,
-                library.id.unwrap()
+                id
             ],
         )?;
         Ok(())
@@ -254,5 +255,21 @@ mod tests {
         assert_eq!(retrieved.name, "Updated Test");
         assert_eq!(retrieved.author, "New Author");
         assert_eq!(retrieved.version, 2);
+    }
+
+    #[test]
+    fn test_update_library_without_id_fails() {
+        let db = Database::open_in_memory().unwrap();
+        let repo = LibraryRepo::new(db.conn());
+        let library = Library::new(
+            "Test".to_string(),
+            "US".to_string(),
+            "2003".to_string(),
+            "Author".to_string(),
+        );
+        // library.id is None — should return an error, not panic
+        let result = repo.update(&library);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("without id"));
     }
 }
