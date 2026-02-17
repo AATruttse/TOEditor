@@ -24,8 +24,27 @@ impl<'a> LibraryService<'a> {
         }
     }
 
+    /// Validate library fields before create/update.
+    fn validate_library(library: &Library) -> Result<()> {
+        let name = library.name.trim();
+        if name.is_empty() {
+            anyhow::bail!("Library name cannot be empty");
+        }
+        if name.len() > 200 {
+            anyhow::bail!("Library name is too long (max 200 characters)");
+        }
+        if library.country.trim().is_empty() {
+            anyhow::bail!("Country cannot be empty");
+        }
+        if library.era.trim().is_empty() {
+            anyhow::bail!("Era cannot be empty");
+        }
+        Ok(())
+    }
+
     /// Create a new library, initial snapshot, default branch categories, and default branches
     pub fn create_library(&self, mut library: Library) -> Result<Library> {
+        Self::validate_library(&library)?;
         self.library_repo.create(&mut library)?;
         
         if let Some(lib_id) = library.id {
@@ -51,6 +70,7 @@ impl<'a> LibraryService<'a> {
 
     /// Save library (update if exists, create if new) and create snapshot
     pub fn save_library(&self, mut library: Library, create_snapshot: bool) -> Result<Library> {
+        Self::validate_library(&library)?;
         if library.id.is_none() {
             // New library
             self.create_library(library)
@@ -361,5 +381,79 @@ mod tests {
         let service = LibraryService::new(db.conn());
         let result = service.get_library(999).unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_create_library_empty_name_rejected() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let library = Library::new(
+            "".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        let result = service.create_library(library);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("name cannot be empty"));
+    }
+
+    #[test]
+    fn test_create_library_whitespace_name_rejected() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let library = Library::new(
+            "   ".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        let result = service.create_library(library);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_library_empty_country_rejected() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let library = Library::new(
+            "Test".to_string(), "".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        let result = service.create_library(library);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Country cannot be empty"));
+    }
+
+    #[test]
+    fn test_create_library_empty_era_rejected() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let library = Library::new(
+            "Test".to_string(), "US".to_string(), "".to_string(), "Author".to_string(),
+        );
+        let result = service.create_library(library);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Era cannot be empty"));
+    }
+
+    #[test]
+    fn test_create_library_name_too_long_rejected() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let long_name = "A".repeat(201);
+        let library = Library::new(
+            long_name, "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        let result = service.create_library(library);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("too long"));
+    }
+
+    #[test]
+    fn test_save_library_empty_name_rejected() {
+        let db = Database::open_in_memory().unwrap();
+        let service = LibraryService::new(db.conn());
+        let mut library = Library::new(
+            "Test".to_string(), "US".to_string(), "2003".to_string(), "Author".to_string(),
+        );
+        library = service.create_library(library).unwrap();
+
+        library.name = "".to_string();
+        let result = service.save_library(library, false);
+        assert!(result.is_err());
     }
 }

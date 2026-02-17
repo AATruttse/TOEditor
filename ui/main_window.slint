@@ -1,679 +1,19 @@
+// Main application window
+// Components are split into separate files for maintainability.
+
 import { Button, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+import { AppTheme } from "theme.slint";
 
-export component LibraryDialog inherits Window {
-    width: 500px;
-    height: 400px;
-    title: "Library Properties";
-    
-    in-out property <string> library-name: "";
-    in-out property <string> library-country: "";
-    in-out property <string> library-era: "";
-    in-out property <string> library-author: "";
-    in-out property <string> library-tags: "";
-    
-    callback accepted();
-    callback cancelled();
-    
-    VerticalBox {
-        padding: 20px;
-        spacing: 10px;
-        
-        Text {
-            text: "Library Properties";
-            font-size: 18px;
-            font-weight: 700;
-        }
-        
-        Rectangle { height: 10px; }
-        
-        VerticalBox {
-            spacing: 8px;
-            
-            Text {
-                text: "Name:";
-                font-size: 12px;
-            }
-            TextInput {
-                text <=> root.library-name;
-            }
-            
-            Text {
-                text: "Country:";
-                font-size: 12px;
-            }
-            TextInput {
-                text: root.library-country;
-            }
-            
-            Text {
-                text: "Era:";
-                font-size: 12px;
-            }
-            TextInput {
-                text <=> root.library-era;
-            }
-            
-            Text {
-                text: "Author:";
-                font-size: 12px;
-            }
-            TextInput {
-                text <=> root.library-author;
-            }
-            
-            Text {
-                text: "Tags (comma-separated):";
-                font-size: 12px;
-            }
-            TextInput {
-                text <=> root.library-tags;
-            }
-        }
-        
-        Rectangle { height: 20px; }
-        
-        HorizontalBox {
-            alignment: end;
-            spacing: 10px;
-            
-            Button {
-                text: "Cancel";
-                clicked => {
-                    root.cancelled();
-                }
-            }
-            Button {
-                text: "OK";
-                clicked => {
-                    root.accepted();
-                }
-            }
-        }
-    }
-}
-
-export component ConfirmDeleteDialog inherits Window {
-    width: 420px;
-    height: 180px;
-    title: root.dialog-title;
-    
-    in-out property <string> message: "";
-    in-out property <string> dialog-title: "Delete library?";
-    in-out property <string> cancel-text: "Cancel";
-    in-out property <string> delete-text: "Delete";
-    
-    callback confirmed();
-    callback cancelled();
-    
-    VerticalBox {
-        padding: 20px;
-        spacing: 16px;
-        
-        Text {
-            text: root.message;
-            font-size: 14px;
-            wrap: word-wrap;
-        }
-        
-        Rectangle { height: 10px; }
-        
-        HorizontalBox {
-            alignment: end;
-            spacing: 10px;
-            
-            Button {
-                text: root.cancel-text;
-                clicked => {
-                    root.cancelled();
-                }
-            }
-            Button {
-                text: root.delete-text;
-                clicked => {
-                    root.confirmed();
-                }
-            }
-        }
-    }
-}
-
-export struct BranchRow {
-    id: int,
-    category-id: int,
-    name-ru: string,
-    name-en: string,
-}
-
-export struct CategoryItem {
-    id: int,
-    name: string,
-}
-
-export struct CategoryRow {
-    id: int,
-    name-ru: string,
-    name-en: string,
-}
-
-export struct FormationLevelRow {
-    id: int,
-    name-ru: string,
-    name-en: string,
-    standard-level-ordinal: int,
-}
-
-export struct OtherLibraryItem {
-    id: int,
-    name: string,
-}
-
-export component FormationLevelsEditor inherits Window {
-    width: 640px;
-    height: 480px;
-    title: root.tr-formation-levels-title;
-    
-    in-out property <int> library-id: -1;
-    in-out property <string> library-name: "";
-    in-out property <[FormationLevelRow]> custom-levels: [];
-    in-out property <int> current-index: -1;
-    in-out property <string> current-name-ru: "";
-    in-out property <string> current-name-en: "";
-    in-out property <int> current-standard-ordinal: 0;
-    in-out property <[string]> standard-level-names: [];
-    
-    in-out property <string> tr-formation-levels-title: "Formation levels";
-    in-out property <string> tr-name-russian: "Name (Russian)";
-    in-out property <string> tr-name-english: "Name (English)";
-    in-out property <string> tr-corresponds-to: "Corresponds to";
-    in-out property <string> tr-add-level: "Add level";
-    in-out property <string> tr-delete-level: "Delete level";
-    in-out property <string> tr-export: "Export…";
-    in-out property <string> tr-import: "Import…";
-    in-out property <string> tr-copy-from-library: "Copy from library";
-    in-out property <string> tr-close: "Close";
-    in-out property <[OtherLibraryItem]> other-libraries: [];
-    in-out property <int> copy-source-index: -1;
-    
-    callback add-level();
-    callback delete-level();
-    callback export-levels();
-    callback import-levels();
-    callback copy-from-library();
-    callback close-editor();
-    callback selection-changed(int);
-    callback form-changed(string, string, int);
-    
-    HorizontalBox {
-        Rectangle {
-            width: 220px;
-            background: #f5f5f5;
-            border-width: 1px;
-            border-color: #ddd;
-            VerticalBox {
-                padding: 8px;
-                spacing: 4px;
-                Text {
-                    text: root.tr-formation-levels-title;
-                    font-size: 14px;
-                    font-weight: 700;
-                }
-                Rectangle { height: 8px; }
-                ScrollView {
-                    VerticalBox {
-                        for level[index] in root.custom-levels: Rectangle {
-                            background: index == root.current-index ? #e0e0e0 : #fff;
-                            border-width: 1px;
-                            border-color: #ddd;
-                            min-height: 32px;
-                            HorizontalBox {
-                                padding: 6px;
-                                Text {
-                                    text: level.name-ru;
-                                    font-size: 12px;
-                                    overflow: elide;
-                                }
-                            }
-                            TouchArea {
-                                clicked => { root.selection-changed(index); }
-                            }
-                        }
-                    }
-                }
-                Rectangle { height: 8px; }
-                HorizontalBox {
-                    spacing: 6px;
-                    Button {
-                        min-width: 90px;
-                        text: root.tr-add-level;
-                        clicked => { root.add-level(); }
-                    }
-                    Button {
-                        min-width: 90px;
-                        text: root.tr-delete-level;
-                        clicked => { root.delete-level(); }
-                    }
-                }
-            }
-        }
-        VerticalBox {
-            padding: 16px;
-            spacing: 12px;
-            Text {
-                text: root.tr-name-russian;
-                font-size: 12px;
-                font-weight: 700;
-            }
-            TextInput {
-                text <=> root.current-name-ru;
-            }
-            Text {
-                text: root.tr-name-english;
-                font-size: 12px;
-                font-weight: 700;
-            }
-            TextInput {
-                text <=> root.current-name-en;
-            }
-            Text {
-                text: root.tr-corresponds-to;
-                font-size: 12px;
-                font-weight: 700;
-            }
-            ScrollView {
-                max-height: 200px;
-                VerticalBox {
-                    for standard[index] in root.standard-level-names: Rectangle {
-                        background: index == root.current-standard-ordinal ? #d0e0ff : #f9f9f9;
-                        border-width: 1px;
-                        border-color: #ddd;
-                        min-height: 28px;
-                        HorizontalBox {
-                            padding: 6px;
-                            Text {
-                                text: standard;
-                                font-size: 12px;
-                            }
-                        }
-                        TouchArea {
-                            clicked => {
-                                root.current-standard-ordinal = index;
-                                root.form-changed(root.current-name-ru, root.current-name-en, index);
-                            }
-                        }
-                    }
-                }
-            }
-            Rectangle { }
-            Text { text: root.tr-copy-from-library; font-size: 12px; font-weight: 700; }
-            ScrollView {
-                max-height: 100px;
-                VerticalBox {
-                    for lib[index] in root.other-libraries: Rectangle {
-                        background: index == root.copy-source-index ? #d0e0ff : #f9f9f9;
-                        min-height: 24px;
-                        HorizontalBox {
-                            padding: 4px;
-                            Text { text: lib.name; font-size: 12px; }
-                        }
-                        TouchArea {
-                            clicked => { root.copy-source-index = index; }
-                        }
-                    }
-                }
-            }
-            HorizontalBox {
-                spacing: 6px;
-                Button {
-                    min-width: 100px;
-                    text: root.tr-export;
-                    clicked => { root.export-levels(); }
-                }
-                Button {
-                    min-width: 100px;
-                    text: root.tr-import;
-                    clicked => { root.import-levels(); }
-                }
-                Button {
-                    min-width: 140px;
-                    text: root.tr-copy-from-library;
-                    clicked => { root.copy-from-library(); }
-                }
-                Rectangle { }
-                Button {
-                    min-width: 80px;
-                    text: root.tr-close;
-                    clicked => { root.close-editor(); }
-                }
-            }
-        }
-    }
-}
-
-export component BranchesEditor inherits Window {
-    width: 600px;
-    height: 460px;
-    title: root.tr-branches-title;
-    
-    in-out property <int> library-id: -1;
-    in-out property <string> library-name: "";
-    in-out property <[BranchRow]> branches: [];
-    in-out property <int> current-index: -1;
-    in-out property <string> current-name-ru: "";
-    in-out property <string> current-name-en: "";
-    in-out property <[CategoryItem]> categories: [];
-    in-out property <int> current-category-index: -1;
-    
-    in-out property <string> tr-branches-title: "Branches of service";
-    in-out property <string> tr-name-russian: "Name (Russian)";
-    in-out property <string> tr-name-english: "Name (English)";
-    in-out property <string> tr-category: "Category";
-    in-out property <string> tr-add: "Add";
-    in-out property <string> tr-delete: "Delete";
-    in-out property <string> tr-export: "Export…";
-    in-out property <string> tr-import: "Import…";
-    in-out property <string> tr-copy-from-library: "Copy from library";
-    in-out property <string> tr-close: "Close";
-    in-out property <[OtherLibraryItem]> other-libraries: [];
-    in-out property <int> copy-source-index: -1;
-    
-    callback add-branch();
-    callback delete-branch();
-    callback export-branches();
-    callback import-branches();
-    callback copy-from-library();
-    callback close-editor();
-    callback selection-changed(int);
-    callback category-changed(int);
-    
-    HorizontalBox {
-        Rectangle {
-            width: 200px;
-            background: #f5f5f5;
-            border-width: 1px;
-            border-color: #ddd;
-            VerticalBox {
-                padding: 8px;
-                spacing: 4px;
-                Text { text: root.tr-branches-title; font-size: 14px; font-weight: 700; }
-                Rectangle { height: 8px; }
-                ScrollView {
-                    VerticalBox {
-                        for branch[index] in root.branches: Rectangle {
-                            background: index == root.current-index ? #e0e0e0 : #fff;
-                            border-width: 1px;
-                            border-color: #ddd;
-                            min-height: 32px;
-                            HorizontalBox {
-                                padding: 6px;
-                                Text { text: branch.name-ru; font-size: 12px; overflow: elide; }
-                            }
-                            TouchArea { clicked => { root.selection-changed(index); } }
-                        }
-                    }
-                }
-                Rectangle { height: 8px; }
-                HorizontalBox {
-                    spacing: 6px;
-                    Button {
-                        min-width: 90px;
-                        text: root.tr-add;
-                        clicked => { root.add-branch(); }
-                    }
-                    Button {
-                        min-width: 90px;
-                        text: root.tr-delete;
-                        clicked => { root.delete-branch(); }
-                    }
-                }
-            }
-        }
-        VerticalBox {
-            padding: 16px;
-            spacing: 12px;
-            Text { text: root.tr-name-russian; font-size: 12px; font-weight: 700; }
-            TextInput { text <=> root.current-name-ru; }
-            Text { text: root.tr-name-english; font-size: 12px; font-weight: 700; }
-            TextInput { text <=> root.current-name-en; }
-            Text { text: root.tr-category; font-size: 12px; font-weight: 700; }
-            ScrollView {
-                max-height: 80px;
-                VerticalBox {
-                    for cat[index] in root.categories: Rectangle {
-                        background: index == root.current-category-index ? #d0e0ff : #f9f9f9;
-                        min-height: 24px;
-                        HorizontalBox {
-                            padding: 4px;
-                            Text { text: cat.name; font-size: 12px; }
-                        }
-                        TouchArea { clicked => { root.category-changed(index); } }
-                    }
-                }
-            }
-            Rectangle { }
-            Text { text: root.tr-copy-from-library; font-size: 12px; font-weight: 700; }
-            ScrollView {
-                max-height: 100px;
-                VerticalBox {
-                    for lib[index] in root.other-libraries: Rectangle {
-                        background: index == root.copy-source-index ? #d0e0ff : #f9f9f9;
-                        min-height: 24px;
-                        HorizontalBox {
-                            padding: 4px;
-                            Text { text: lib.name; font-size: 12px; }
-                        }
-                        TouchArea { clicked => { root.copy-source-index = index; } }
-                    }
-                }
-            }
-            HorizontalBox {
-                spacing: 6px;
-                Button {
-                    min-width: 100px;
-                    text: root.tr-export;
-                    clicked => { root.export-branches(); }
-                }
-                Button {
-                    min-width: 100px;
-                    text: root.tr-import;
-                    clicked => { root.import-branches(); }
-                }
-                Button {
-                    min-width: 140px;
-                    text: root.tr-copy-from-library;
-                    clicked => { root.copy-from-library(); }
-                }
-                Rectangle { }
-                Button {
-                    min-width: 80px;
-                    text: root.tr-close;
-                    clicked => { root.close-editor(); }
-                }
-            }
-        }
-    }
-}
-
-export component BranchCategoriesEditor inherits Window {
-    width: 600px;
-    height: 460px;
-    title: root.tr-categories-title;
-    
-    in-out property <int> library-id: -1;
-    in-out property <string> library-name: "";
-    in-out property <[CategoryRow]> categories: [];
-    in-out property <int> current-index: -1;
-    in-out property <string> current-name-ru: "";
-    in-out property <string> current-name-en: "";
-    
-    in-out property <string> tr-categories-title: "Branch categories";
-    in-out property <string> tr-name-russian: "Name (Russian)";
-    in-out property <string> tr-name-english: "Name (English)";
-    in-out property <string> tr-add: "Add";
-    in-out property <string> tr-delete: "Delete";
-    in-out property <string> tr-export: "Export…";
-    in-out property <string> tr-import: "Import…";
-    in-out property <string> tr-copy-from-library: "Copy from library";
-    in-out property <string> tr-close: "Close";
-    in-out property <[OtherLibraryItem]> other-libraries: [];
-    in-out property <int> copy-source-index: -1;
-    
-    callback add-category();
-    callback delete-category();
-    callback export-categories();
-    callback import-categories();
-    callback copy-from-library();
-    callback close-editor();
-    callback selection-changed(int);
-    
-    HorizontalBox {
-        Rectangle {
-            width: 200px;
-            background: #f5f5f5;
-            border-width: 1px;
-            border-color: #ddd;
-            VerticalBox {
-                padding: 8px;
-                spacing: 4px;
-                Text { text: root.tr-categories-title; font-size: 14px; font-weight: 700; }
-                Rectangle { height: 8px; }
-                ScrollView {
-                    VerticalBox {
-                        for cat[index] in root.categories: Rectangle {
-                            background: index == root.current-index ? #e0e0e0 : #fff;
-                            border-width: 1px;
-                            border-color: #ddd;
-                            min-height: 32px;
-                            HorizontalBox {
-                                padding: 6px;
-                                Text { text: cat.name-ru; font-size: 12px; overflow: elide; }
-                            }
-                            TouchArea { clicked => { root.selection-changed(index); } }
-                        }
-                    }
-                }
-                Rectangle { height: 8px; }
-                HorizontalBox {
-                    spacing: 6px;
-                    Button {
-                        min-width: 90px;
-                        text: root.tr-add;
-                        clicked => { root.add-category(); }
-                    }
-                    Button {
-                        min-width: 90px;
-                        text: root.tr-delete;
-                        clicked => { root.delete-category(); }
-                    }
-                }
-            }
-        }
-        VerticalBox {
-            padding: 16px;
-            spacing: 12px;
-            Text { text: root.tr-name-russian; font-size: 12px; font-weight: 700; }
-            TextInput { text <=> root.current-name-ru; }
-            Text { text: root.tr-name-english; font-size: 12px; font-weight: 700; }
-            TextInput { text <=> root.current-name-en; }
-            Rectangle { }
-            Text { text: root.tr-copy-from-library; font-size: 12px; font-weight: 700; }
-            ScrollView {
-                max-height: 100px;
-                VerticalBox {
-                    for lib[index] in root.other-libraries: Rectangle {
-                        background: index == root.copy-source-index ? #d0e0ff : #f9f9f9;
-                        min-height: 24px;
-                        HorizontalBox {
-                            padding: 4px;
-                            Text { text: lib.name; font-size: 12px; }
-                        }
-                        TouchArea { clicked => { root.copy-source-index = index; } }
-                    }
-                }
-            }
-            HorizontalBox {
-                spacing: 6px;
-                Button {
-                    min-width: 100px;
-                    text: root.tr-export;
-                    clicked => { root.export-categories(); }
-                }
-                Button {
-                    min-width: 100px;
-                    text: root.tr-import;
-                    clicked => { root.import-categories(); }
-                }
-                Button {
-                    min-width: 140px;
-                    text: root.tr-copy-from-library;
-                    clicked => { root.copy-from-library(); }
-                }
-                Rectangle { }
-                Button {
-                    min-width: 80px;
-                    text: root.tr-close;
-                    clicked => { root.close-editor(); }
-                }
-            }
-        }
-    }
-}
-
-export component LibraryContextMenu inherits Window {
-    width: 200px;
-    height: 140px;
-    title: "";
-    no-frame: true;
-    in-out property <int> library-id: -1;
-    callback properties();
-    callback export-library();
-    callback history();
-    callback delete-library();
-    callback cancelled();
-    Rectangle {
-        background: #ffffff;
-        border-width: 1px;
-        border-color: #999;
-        VerticalBox {
-            padding: 4px;
-            TouchArea {
-                height: 28px;
-                HorizontalBox {
-                    padding: 8px;
-                    Text { text: "Properties…"; font-size: 12px; }
-                }
-                clicked => { root.properties(); }
-            }
-            TouchArea {
-                height: 28px;
-                HorizontalBox {
-                    padding: 8px;
-                    Text { text: "Export…"; font-size: 12px; }
-                }
-                clicked => { root.export-library(); }
-            }
-            TouchArea {
-                height: 28px;
-                HorizontalBox {
-                    padding: 8px;
-                    Text { text: "View history…"; font-size: 12px; }
-                }
-                clicked => { root.history(); }
-            }
-            Rectangle { height: 2px; background: #ddd; }
-            TouchArea {
-                height: 28px;
-                HorizontalBox {
-                    padding: 8px;
-                    Text { text: "Delete"; font-size: 12px; }
-                }
-                clicked => { root.delete-library(); }
-            }
-        }
-    }
-}
+// Re-export components from submodules so Rust's slint::include_modules!() can see them
+export { AppTheme } from "theme.slint";
+export { LibraryDialog, ConfirmDeleteDialog, ErrorDialog } from "dialogs.slint";
+export { BranchesEditor, BranchCategoriesEditor, FormationLevelsEditor,
+         BranchRow, CategoryItem, CategoryRow, FormationLevelRow, OtherLibraryItem } from "editors.slint";
+export { LibraryContextMenu } from "context_menu.slint";
 
 export struct ToolbarButton {
     id: string,
+    text: string,
     icon: string,
     tooltip: string,
     enabled: bool,
@@ -690,7 +30,7 @@ export struct LibraryItem {
 export struct FormationTab {
     id: int,
     title: string,
-    view-mode: string, // "table" | "diagram" | "both"
+    view-mode: string,
 }
 
 export struct FormationTreeItem {
@@ -705,7 +45,7 @@ export component MainWindow inherits Window {
     preferred-height: 800px;
     min-width: 800px;
     min-height: 600px;
-    background: root.color-bg-main;
+    background: AppTheme.bg-main;
 
     in-out property <[ToolbarButton]> toolbar: [];
     in-out property <string> window-title: @tr("TOEditor");
@@ -721,31 +61,9 @@ export component MainWindow inherits Window {
     in-out property <int> current-tab-index: -1;
     in-out property <string> current-tab-title: "";
     in-out property <string> current-tab-view-mode: "table";
-    
-    // Theme properties
-    in-out property <string> theme: "light"; // "light" or "dark"
-    
-    // Color theme variables (light theme - Variant #2, dark theme - wet asphalt)
-    property <color> color-bg-main: root.theme == "dark" ? #34495e : #f5f5f5;
-    property <color> color-bg-toolbar: root.theme == "dark" ? #3d566e : #e8e8e8;
-    property <color> color-bg-sidebar: root.theme == "dark" ? #3d566e : #f0f0f0;
-    property <color> color-bg-sidebar-alt: root.theme == "dark" ? #465a6f : #e8e8e8;
-    property <color> color-bg-content: root.theme == "dark" ? #34495e : #ffffff;
-    property <color> color-bg-list: root.theme == "dark" ? #3d566e : #ffffff;
-    property <color> color-bg-tab-active: root.theme == "dark" ? #3d566e : #ffffff;
-    property <color> color-bg-tab-inactive: root.theme == "dark" ? #465a6f : #d0d0d0;
-    property <color> color-bg-selected: root.theme == "dark" ? #4a6fa5 : #e0e0e0;
-    property <color> color-bg-hover: root.theme == "dark" ? #465a6f : #f0f0f0;
-    
-    property <color> color-text-primary: root.theme == "dark" ? #ecf0f1 : #1f2937;
-    property <color> color-text-secondary: root.theme == "dark" ? #bdc3c7 : #6b7280;
-    
-    property <color> color-accent: root.theme == "dark" ? #3498db : #2563eb;
-    property <color> color-accent-hover: root.theme == "dark" ? #5dade2 : #3b82f6;
-    
-    property <color> color-border: root.theme == "dark" ? #4a5f7a : #d1d5db;
-    property <color> color-border-light: root.theme == "dark" ? #465a6f : #e5e7eb;
-    property <color> color-separator: root.theme == "dark" ? #4a5f7a : #bbb;
+
+    // Theme property (drives AppTheme global)
+    in-out property <string> theme: "light";
 
     // Strings set from Rust so they update when language changes
     in-out property <string> tr-new-library: "New Library";
@@ -871,10 +189,10 @@ export component MainWindow inherits Window {
     callback library-compare-versions();
     callback library-revert-to-version();
     callback library-delete();
-    
+
     // Library dialog callbacks
-    callback show-library-dialog(string, int); // mode: "new" or "edit", library_id for edit
-    callback library-dialog-accepted(string, string, string, string, string, int); // name, country, era, author, tags, library_id (-1 for new)
+    callback show-library-dialog(string, int);
+    callback library-dialog-accepted(string, string, string, string, string, int);
     callback library-dialog-cancelled();
 
     // Unit menu callbacks
@@ -897,7 +215,7 @@ export component MainWindow inherits Window {
     callback view-symbols-russia();
     callback view-load-symbols();
     callback view-color-scheme();
-    callback switch-theme(string); // "light" or "dark"
+    callback switch-theme(string);
     callback view-show-images();
     callback view-zoom-in();
     callback view-zoom-out();
@@ -931,6 +249,29 @@ export component MainWindow inherits Window {
     callback tab-select(int);
     callback tab-close(int);
     callback tab-set-view-mode(int, string);
+
+    // Toolbar button click
+    callback toolbar-clicked(string);
+
+    // Keyboard shortcuts
+    forward-focus: main-key-handler;
+    main-key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.modifiers.control && event.text == "s") {
+                root.file-save-library();
+                return accept;
+            }
+            if (event.modifiers.control && event.text == "n") {
+                root.file-new-library();
+                return accept;
+            }
+            if (event.modifiers.control && event.text == "o") {
+                root.file-open-library();
+                return accept;
+            }
+            reject
+        }
+    }
 
     MenuBar {
         Menu {
@@ -995,288 +336,168 @@ export component MainWindow inherits Window {
         }
         Menu {
             title: root.tr-edit;
-            MenuItem {
-                title: root.tr-find;
-                activated => { root.edit-find(); }
-            }
-            MenuItem {
-                title: root.tr-find-and-replace;
-                activated => { root.edit-find-replace(); }
-            }
+            MenuItem { title: root.tr-find; activated => { root.edit-find(); } }
+            MenuItem { title: root.tr-find-and-replace; activated => { root.edit-find-replace(); } }
             MenuSeparator {}
-            MenuItem {
-                title: root.tr-undo;
-                activated => { root.edit-undo(); }
-            }
-            MenuItem {
-                title: root.tr-redo;
-                activated => { root.edit-redo(); }
-            }
+            MenuItem { title: root.tr-undo; activated => { root.edit-undo(); } }
+            MenuItem { title: root.tr-redo; activated => { root.edit-redo(); } }
             MenuSeparator {}
-            MenuItem {
-                title: root.tr-cut;
-                activated => { root.edit-cut(); }
-            }
-            MenuItem {
-                title: root.tr-copy;
-                activated => { root.edit-copy(); }
-            }
-            MenuItem {
-                title: root.tr-paste;
-                activated => { root.edit-paste(); }
-            }
-            MenuItem {
-                title: root.tr-delete;
-                activated => { root.edit-delete(); }
-            }
+            MenuItem { title: root.tr-cut; activated => { root.edit-cut(); } }
+            MenuItem { title: root.tr-copy; activated => { root.edit-copy(); } }
+            MenuItem { title: root.tr-paste; activated => { root.edit-paste(); } }
+            MenuItem { title: root.tr-delete; activated => { root.edit-delete(); } }
             MenuSeparator {}
-            MenuItem {
-                title: root.tr-add-new-formation;
-                activated => { root.edit-add-formation(); }
-            }
-            MenuItem {
-                title: root.tr-edit-properties;
-                activated => { root.edit-edit-properties(); }
-            }
+            MenuItem { title: root.tr-add-new-formation; activated => { root.edit-add-formation(); } }
+            MenuItem { title: root.tr-edit-properties; activated => { root.edit-edit-properties(); } }
         }
         Menu {
             title: root.tr-library;
-            MenuItem {
-                title: root.tr-positions-and-ranks-editor;
-                activated => { root.library-positions-editor(); }
-            }
-            MenuItem {
-                title: root.tr-equipment-and-vehicles-editor;
-                activated => { root.library-equipment-editor(); }
-            }
-            MenuItem {
-                title: root.tr-formation-levels;
-                activated => { root.library-formation-levels(); }
-            }
-            MenuItem {
-                title: root.tr-branches;
-                activated => { root.library-branches(); }
-            }
-            MenuItem {
-                title: root.tr-branch-categories;
-                activated => { root.library-branch-categories(); }
-            }
-            MenuItem {
-                title: root.tr-library-properties;
-                activated => { root.library-properties(); }
-            }
-            MenuItem {
-                title: root.tr-manage-tags;
-                activated => { root.library-manage-tags(); }
-            }
-            MenuItem {
-                title: root.tr-export-library-ellipsis;
-                activated => { root.library-export-library(); }
-            }
+            MenuItem { title: root.tr-positions-and-ranks-editor; activated => { root.library-positions-editor(); } }
+            MenuItem { title: root.tr-equipment-and-vehicles-editor; activated => { root.library-equipment-editor(); } }
+            MenuItem { title: root.tr-formation-levels; activated => { root.library-formation-levels(); } }
+            MenuItem { title: root.tr-branches; activated => { root.library-branches(); } }
+            MenuItem { title: root.tr-branch-categories; activated => { root.library-branch-categories(); } }
+            MenuItem { title: root.tr-library-properties; activated => { root.library-properties(); } }
+            MenuItem { title: root.tr-manage-tags; activated => { root.library-manage-tags(); } }
+            MenuItem { title: root.tr-export-library-ellipsis; activated => { root.library-export-library(); } }
             MenuSeparator {}
             Menu {
                 title: root.tr-version-control;
-                MenuItem {
-                    title: root.tr-view-history;
-                    activated => { root.library-view-history(); }
-                }
-                MenuItem {
-                    title: root.tr-create-snapshot;
-                    activated => { root.library-create-snapshot(); }
-                }
-                MenuItem {
-                    title: root.tr-compare-versions;
-                    activated => { root.library-compare-versions(); }
-                }
-                MenuItem {
-                    title: root.tr-revert-to-version;
-                    activated => { root.library-revert-to-version(); }
-                }
+                MenuItem { title: root.tr-view-history; activated => { root.library-view-history(); } }
+                MenuItem { title: root.tr-create-snapshot; activated => { root.library-create-snapshot(); } }
+                MenuItem { title: root.tr-compare-versions; activated => { root.library-compare-versions(); } }
+                MenuItem { title: root.tr-revert-to-version; activated => { root.library-revert-to-version(); } }
             }
         }
         Menu {
             title: root.tr-unit;
-            MenuItem {
-                title: root.tr-add-child-formation;
-                activated => { root.unit-add-child(); }
-            }
-            MenuItem {
-                title: root.tr-delete-this-formation;
-                activated => { root.unit-delete(); }
-            }
-            MenuItem {
-                title: root.tr-move-up;
-                activated => { root.unit-move-up(); }
-            }
-            MenuItem {
-                title: root.tr-move-down;
-                activated => { root.unit-move-down(); }
-            }
-            MenuItem {
-                title: root.tr-summary-table;
-                activated => { root.unit-summary-table(); }
-            }
-            MenuItem {
-                title: root.tr-export-this-formation;
-                activated => { root.unit-export(); }
-            }
+            MenuItem { title: root.tr-add-child-formation; activated => { root.unit-add-child(); } }
+            MenuItem { title: root.tr-delete-this-formation; activated => { root.unit-delete(); } }
+            MenuItem { title: root.tr-move-up; activated => { root.unit-move-up(); } }
+            MenuItem { title: root.tr-move-down; activated => { root.unit-move-down(); } }
+            MenuItem { title: root.tr-summary-table; activated => { root.unit-summary-table(); } }
+            MenuItem { title: root.tr-export-this-formation; activated => { root.unit-export(); } }
             MenuSeparator {}
             Menu {
                 title: root.tr-version-control;
-                MenuItem {
-                    title: root.tr-view-history;
-                    activated => { root.unit-view-history(); }
-                }
-                MenuItem {
-                    title: root.tr-create-snapshot;
-                    activated => { root.unit-create-snapshot(); }
-                }
-                MenuItem {
-                    title: root.tr-compare-versions;
-                    activated => { root.unit-compare-versions(); }
-                }
-                MenuItem {
-                    title: root.tr-revert-to-version;
-                    activated => { root.unit-revert-to-version(); }
-                }
+                MenuItem { title: root.tr-view-history; activated => { root.unit-view-history(); } }
+                MenuItem { title: root.tr-create-snapshot; activated => { root.unit-create-snapshot(); } }
+                MenuItem { title: root.tr-compare-versions; activated => { root.unit-compare-versions(); } }
+                MenuItem { title: root.tr-revert-to-version; activated => { root.unit-revert-to-version(); } }
             }
         }
         Menu {
             title: root.tr-view;
             Menu {
                 title: root.tr-view-mode;
-                MenuItem {
-                    title: root.tr-table;
-                    activated => { root.view-table(); }
-                }
-                MenuItem {
-                    title: root.tr-diagram;
-                    activated => { root.view-diagram(); }
-                }
-                MenuItem {
-                    title: root.tr-table-and-diagram;
-                    activated => { root.view-table-and-diagram(); }
-                }
+                MenuItem { title: root.tr-table; activated => { root.view-table(); } }
+                MenuItem { title: root.tr-diagram; activated => { root.view-diagram(); } }
+                MenuItem { title: root.tr-table-and-diagram; activated => { root.view-table-and-diagram(); } }
             }
             MenuSeparator {}
             Menu {
                 title: root.tr-tactical-symbols;
-                MenuItem {
-                    title: root.tr-nato-app6;
-                    activated => { root.view-symbols-nato(); }
-                }
-                MenuItem {
-                    title: root.tr-russia-gost;
-                    activated => { root.view-symbols-russia(); }
-                }
-                MenuItem {
-                    title: root.tr-load-custom-set;
-                    activated => { root.view-load-symbols(); }
-                }
+                MenuItem { title: root.tr-nato-app6; activated => { root.view-symbols-nato(); } }
+                MenuItem { title: root.tr-russia-gost; activated => { root.view-symbols-russia(); } }
+                MenuItem { title: root.tr-load-custom-set; activated => { root.view-load-symbols(); } }
             }
             Menu {
                 title: root.tr-color-scheme;
-                MenuItem {
-                    title: root.tr-light;
-                    activated => { root.switch-theme("light"); }
-                }
-                MenuItem {
-                    title: root.tr-dark;
-                    activated => { root.switch-theme("dark"); }
-                }
+                MenuItem { title: root.tr-light; activated => { root.switch-theme("light"); } }
+                MenuItem { title: root.tr-dark; activated => { root.switch-theme("dark"); } }
             }
-            MenuItem {
-                title: root.tr-show-equipment-images;
-                activated => { root.view-show-images(); }
-            }
+            MenuItem { title: root.tr-show-equipment-images; activated => { root.view-show-images(); } }
             MenuSeparator {}
             Menu {
                 title: root.tr-zoom;
-                MenuItem {
-                    title: root.tr-zoom-in;
-                    activated => { root.view-zoom-in(); }
-                }
-                MenuItem {
-                    title: root.tr-zoom-out;
-                    activated => { root.view-zoom-out(); }
-                }
-                MenuItem {
-                    title: root.tr-reset-zoom;
-                    activated => { root.view-zoom-reset(); }
-                }
+                MenuItem { title: root.tr-zoom-in; activated => { root.view-zoom-in(); } }
+                MenuItem { title: root.tr-zoom-out; activated => { root.view-zoom-out(); } }
+                MenuItem { title: root.tr-reset-zoom; activated => { root.view-zoom-reset(); } }
             }
-            MenuItem {
-                title: root.tr-refresh;
-                activated => { root.view-refresh(); }
-            }
+            MenuItem { title: root.tr-refresh; activated => { root.view-refresh(); } }
         }
         Menu {
             title: root.tr-tools;
-            MenuItem {
-                title: root.tr-settings;
-                activated => { root.tools-settings(); }
-            }
+            MenuItem { title: root.tr-settings; activated => { root.tools-settings(); } }
             Menu {
                 title: root.tr-interface-language;
                 MenuItem {
                     title: root.tr-english;
-                    activated => { 
+                    activated => {
                         root.switch-language("en");
                         root.switch-to-english();
                     }
                 }
                 MenuItem {
                     title: root.tr-russian;
-                    activated => { 
+                    activated => {
                         root.switch-language("ru");
                         root.switch-to-russian();
                     }
                 }
             }
-            MenuItem {
-                title: root.tr-data-paths;
-                activated => { root.tools-data-paths(); }
-            }
-            MenuItem {
-                title: root.tr-reset-settings;
-                activated => { root.tools-reset-settings(); }
-            }
+            MenuItem { title: root.tr-data-paths; activated => { root.tools-data-paths(); } }
+            MenuItem { title: root.tr-reset-settings; activated => { root.tools-reset-settings(); } }
         }
         Menu {
             title: root.tr-help;
-            MenuItem {
-                title: root.tr-user-guide;
-                activated => { root.help-user-guide(); }
-            }
-            MenuItem {
-                title: root.tr-about-toeditor;
-                activated => { root.help-about(); }
-            }
-            MenuItem {
-                title: root.tr-check-for-updates;
-                activated => { root.help-check-updates(); }
-            }
+            MenuItem { title: root.tr-user-guide; activated => { root.help-user-guide(); } }
+            MenuItem { title: root.tr-about-toeditor; activated => { root.help-about(); } }
+            MenuItem { title: root.tr-check-for-updates; activated => { root.help-check-updates(); } }
         }
     }
 
     VerticalBox {
-        // Toolbar
+        // ===== Toolbar =====
         Rectangle {
             height: 40px;
-            background: root.color-bg-toolbar;
+            background: AppTheme.bg-toolbar;
             HorizontalBox {
-                padding: 5px;
-                spacing: 5px;
-                Button {
-                    text: root.tr-save-library;
-                    enabled: false;
-                    clicked => { root.file-save-library(); }
+                padding: 4px;
+                spacing: 2px;
+
+                for btn[index] in root.toolbar: Rectangle {
+                    if btn.is-separator: Rectangle {
+                        width: 1px;
+                        height: 24px;
+                        background: AppTheme.separator;
+                    }
+                    if !btn.is-separator: Rectangle {
+                        min-width: 32px;
+                        max-width: 100px;
+                        height: 30px;
+                        background: tb-touch.has-hover && btn.enabled ? AppTheme.bg-hover : transparent;
+                        border-radius: 4px;
+                        HorizontalBox {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            Text {
+                                text: btn.text;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                                color: btn.enabled ? AppTheme.text-primary : AppTheme.text-secondary;
+                            }
+                        }
+                        tb-touch := TouchArea {
+                            clicked => {
+                                if (btn.enabled) {
+                                    root.toolbar-clicked(btn.id);
+                                }
+                            }
+                        }
+                    }
                 }
-                Rectangle { width: 2px; background: root.color-separator; }
-                Text { 
-                    text: root.tr-language; 
+
+                Rectangle { horizontal-stretch: 1; }
+
+                // Language quick-switch
+                Rectangle { width: 1px; height: 24px; background: AppTheme.separator; }
+                Text {
+                    text: root.tr-language;
+                    font-size: 12px;
                     vertical-alignment: center;
-                    color: root.color-text-primary;
+                    color: AppTheme.text-secondary;
                 }
                 Button {
                     text: "EN";
@@ -1295,14 +516,14 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Main content: two collapsible sidebars + center with tabs
+        // ===== Main content: sidebars + center with tabs =====
         HorizontalBox {
             // === Left: Collapsible Libraries sidebar ===
             Rectangle {
                 width: root.libraries-sidebar-expanded ? 220px : 28px;
-                background: root.color-bg-sidebar;
+                background: AppTheme.bg-sidebar;
                 border-width: 1px;
-                border-color: root.color-border;
+                border-color: AppTheme.border;
                 VerticalBox {
                     if root.libraries-sidebar-expanded: VerticalBox {
                         padding: 8px;
@@ -1312,40 +533,47 @@ export component MainWindow inherits Window {
                                 font-size: 14px;
                                 font-weight: 700;
                                 vertical-alignment: center;
-                                color: root.color-text-primary;
+                                color: AppTheme.text-primary;
                             }
                             Rectangle { width: 1px; }
-                            TouchArea {
+                            collapse-libs := Rectangle {
                                 width: 20px;
                                 height: 20px;
+                                background: touch-collapse-libs.has-hover ? AppTheme.bg-hover : transparent;
+                                border-radius: 3px;
                                 Text {
                                     text: "◀";
                                     font-size: 11px;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
+                                    color: AppTheme.text-secondary;
                                 }
-                                clicked => { root.toggle-libraries-sidebar(); }
+                                touch-collapse-libs := TouchArea {
+                                    clicked => { root.toggle-libraries-sidebar(); }
+                                }
                             }
                         }
                         Rectangle { height: 8px; }
                         Rectangle {
-                            background: root.color-bg-list;
+                            background: AppTheme.bg-list;
                             border-width: 1px;
-                            border-color: root.color-border-light;
+                            border-color: AppTheme.border-light;
                             ScrollView {
                                 Rectangle {
-                                    background: root.color-bg-list;
+                                    background: AppTheme.bg-list;
                                     VerticalBox {
                                         for library[index] in root.libraries: Rectangle {
                                             height: 28px;
-                                            background: library.id == root.current-library-id ? root.color-bg-selected : root.color-bg-list;
+                                            background: library.id == root.current-library-id
+                                                ? AppTheme.bg-selected
+                                                : (touch-lib.has-hover ? AppTheme.bg-hover : AppTheme.bg-list);
                                             HorizontalBox {
                                                 padding: 4px;
                                                 Text {
                                                     text: library.name;
                                                     font-size: 12px;
                                                     overflow: elide;
-                                                    color: root.color-text-primary;
+                                                    color: AppTheme.text-primary;
                                                 }
                                             }
                                             touch-lib := TouchArea {
@@ -1367,16 +595,21 @@ export component MainWindow inherits Window {
                     }
                     if !root.libraries-sidebar-expanded: VerticalBox {
                         padding: 8px;
-                        TouchArea {
+                        expand-libs := Rectangle {
                             width: 24px;
                             height: 24px;
+                            background: touch-expand-libs.has-hover ? AppTheme.bg-hover : transparent;
+                            border-radius: 3px;
                             Text {
                                 text: "▶";
                                 font-size: 12px;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
+                                color: AppTheme.text-secondary;
                             }
-                            clicked => { root.toggle-libraries-sidebar(); }
+                            touch-expand-libs := TouchArea {
+                                clicked => { root.toggle-libraries-sidebar(); }
+                            }
                         }
                         Rectangle { }
                     }
@@ -1386,9 +619,9 @@ export component MainWindow inherits Window {
             // === Collapsible Formations sidebar (only when library open) ===
             if root.current-library-id >= 0: Rectangle {
                 width: root.formations-sidebar-expanded ? 200px : 28px;
-                background: root.color-bg-sidebar-alt;
+                background: AppTheme.bg-sidebar-alt;
                 border-width: 1px;
-                border-color: root.color-border;
+                border-color: AppTheme.border;
                 HorizontalBox {
                     if root.formations-sidebar-expanded: VerticalBox {
                         padding: 8px;
@@ -1398,32 +631,38 @@ export component MainWindow inherits Window {
                                 font-size: 14px;
                                 font-weight: 700;
                                 vertical-alignment: center;
-                                color: root.color-text-primary;
+                                color: AppTheme.text-primary;
                             }
                             Rectangle { width: 1px; }
-                            TouchArea {
+                            collapse-form := Rectangle {
                                 width: 20px;
                                 height: 20px;
+                                background: touch-collapse-form.has-hover ? AppTheme.bg-hover : transparent;
+                                border-radius: 3px;
                                 Text {
                                     text: "◀";
                                     font-size: 11px;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
+                                    color: AppTheme.text-secondary;
                                 }
-                                clicked => { root.toggle-formations-sidebar(); }
+                                touch-collapse-form := TouchArea {
+                                    clicked => { root.toggle-formations-sidebar(); }
+                                }
                             }
                         }
                         Rectangle { height: 8px; }
                         Rectangle {
-                            background: root.color-bg-list;
+                            background: AppTheme.bg-list;
                             border-width: 1px;
-                            border-color: root.color-border-light;
+                            border-color: AppTheme.border-light;
                             ScrollView {
                                 Rectangle {
-                                    background: root.color-bg-list;
+                                    background: AppTheme.bg-list;
                                     VerticalBox {
                                         for formation[index] in root.formations: Rectangle {
                                             height: 26px;
+                                            background: touch-form.has-hover ? AppTheme.bg-hover : transparent;
                                             HorizontalBox {
                                                 padding-left: formation.depth * 12px + 4px;
                                                 padding-top: 4px;
@@ -1432,7 +671,7 @@ export component MainWindow inherits Window {
                                                     text: formation.name;
                                                     font-size: 12px;
                                                     overflow: elide;
-                                                    color: root.color-text-primary;
+                                                    color: AppTheme.text-primary;
                                                 }
                                             }
                                             touch-form := TouchArea {
@@ -1447,7 +686,7 @@ export component MainWindow inherits Window {
                                                 text: root.tr-welcome-desc;
                                                 font-size: 11px;
                                                 wrap: word-wrap;
-                                                color: root.color-text-secondary;
+                                                color: AppTheme.text-secondary;
                                             }
                                         }
                                     }
@@ -1458,16 +697,21 @@ export component MainWindow inherits Window {
                     }
                     if !root.formations-sidebar-expanded: VerticalBox {
                         padding: 8px;
-                        TouchArea {
+                        expand-form := Rectangle {
                             width: 24px;
                             height: 24px;
+                            background: touch-expand-form.has-hover ? AppTheme.bg-hover : transparent;
+                            border-radius: 3px;
                             Text {
                                 text: "▶";
                                 font-size: 12px;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
+                                color: AppTheme.text-secondary;
                             }
-                            clicked => { root.toggle-formations-sidebar(); }
+                            touch-expand-form := TouchArea {
+                                clicked => { root.toggle-formations-sidebar(); }
+                            }
                         }
                         Rectangle { }
                     }
@@ -1479,41 +723,48 @@ export component MainWindow inherits Window {
                 // Tab bar
                 Rectangle {
                     height: 32px;
-                    background: root.color-bg-toolbar;
+                    background: AppTheme.bg-toolbar;
                     border-width: 1px;
-                    border-color: root.color-border;
+                    border-color: AppTheme.border;
                     HorizontalBox {
                         padding: 4px;
                         spacing: 2px;
                         for tab[index] in root.open-tabs: Rectangle {
                             height: 28px;
                             min-width: 80px;
-                            background: index == root.current-tab-index ? #fff : #d0d0d0;
+                            background: index == root.current-tab-index
+                                ? AppTheme.bg-tab-active
+                                : (touch-tab.has-hover ? AppTheme.bg-hover : AppTheme.bg-tab-inactive);
                             border-width: 1px;
-                            border-color: #bbb;
+                            border-color: AppTheme.border;
                             HorizontalBox {
                                 padding: 6px;
-                                TouchArea {
+                                touch-tab := TouchArea {
                                     Text {
                                         text: tab.title;
                                         font-size: 12px;
                                         overflow: elide;
                                         vertical-alignment: center;
-                                        color: root.color-text-primary;
+                                        color: AppTheme.text-primary;
                                     }
                                     clicked => { root.tab-select(index); }
                                 }
                                 Rectangle { width: 4px; }
-                                TouchArea {
+                                close-btn := Rectangle {
                                     width: 18px;
                                     height: 18px;
+                                    background: touch-close.has-hover ? AppTheme.bg-hover : transparent;
+                                    border-radius: 3px;
                                     Text {
                                         text: "×";
                                         font-size: 14px;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
+                                        color: AppTheme.text-secondary;
                                     }
-                                    clicked => { root.tab-close(index); }
+                                    touch-close := TouchArea {
+                                        clicked => { root.tab-close(index); }
+                                    }
                                 }
                             }
                         }
@@ -1521,9 +772,9 @@ export component MainWindow inherits Window {
                 }
                 // Tab content area
                 Rectangle {
-                    background: root.color-bg-content;
+                    background: AppTheme.bg-content;
                     border-width: 1px;
-                    border-color: root.color-border-light;
+                    border-color: AppTheme.border-light;
                     VerticalBox {
                         Rectangle { }
                         if root.open-tabs.length == 0: VerticalBox {
@@ -1533,13 +784,13 @@ export component MainWindow inherits Window {
                                 text: root.tr-welcome-title;
                                 font-size: 22px;
                                 font-weight: 700;
-                                color: root.color-text-primary;
+                                color: AppTheme.text-primary;
                             }
                             Rectangle { height: 12px; }
                             Text {
                                 text: root.tr-welcome-desc;
                                 font-size: 14px;
-                                color: root.color-text-secondary;
+                                color: AppTheme.text-secondary;
                             }
                         }
                         if root.open-tabs.length > 0 && root.current-tab-index >= 0: VerticalBox {
@@ -1562,13 +813,17 @@ export component MainWindow inherits Window {
                                 }
                             }
                             Rectangle {
-                                background: root.color-bg-content;
+                                background: AppTheme.bg-content;
                                 VerticalBox {
                                     padding: 16px;
                                     Text {
-                                        text: root.current-tab-view-mode == "table" ? (root.tr-table + " — " + root.current-tab-title) : (root.current-tab-view-mode == "diagram" ? (root.tr-diagram + " — " + root.current-tab-title) : (root.tr-table-and-diagram + " — " + root.current-tab-title));
+                                        text: root.current-tab-view-mode == "table"
+                                            ? (root.tr-table + " — " + root.current-tab-title)
+                                            : (root.current-tab-view-mode == "diagram"
+                                                ? (root.tr-diagram + " — " + root.current-tab-title)
+                                                : (root.tr-table-and-diagram + " — " + root.current-tab-title));
                                         font-size: 14px;
-                                        color: root.color-text-primary;
+                                        color: AppTheme.text-primary;
                                     }
                                 }
                             }
@@ -1576,7 +831,6 @@ export component MainWindow inherits Window {
                     }
                 }
             }
-
         }
     }
 }

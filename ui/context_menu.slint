@@ -1,0 +1,93 @@
+// Library context menu (right-click)
+
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { AppTheme } from "theme.slint";
+
+export component LibraryContextMenu inherits Window {
+    width: 200px;
+    height: 140px;
+    title: "";
+    no-frame: true;
+
+    in-out property <int> library-id: -1;
+
+    // Translatable labels
+    in-out property <string> tr-properties: "Properties…";
+    in-out property <string> tr-export: "Export…";
+    in-out property <string> tr-history: "View history…";
+    in-out property <string> tr-delete: "Delete";
+
+    callback properties();
+    callback export-library();
+    callback history();
+    callback delete-library();
+    callback cancelled();
+
+    forward-focus: key-handler;
+
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancelled();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    Rectangle {
+        background: AppTheme.bg-dialog;
+        border-width: 1px;
+        border-color: AppTheme.border;
+
+        VerticalBox {
+            padding: 4px;
+
+            menu-item-1 := Rectangle {
+                height: 28px;
+                background: touch1.has-hover ? AppTheme.bg-hover : transparent;
+                HorizontalBox {
+                    padding: 8px;
+                    Text { text: root.tr-properties; font-size: 12px; color: AppTheme.text-primary; }
+                }
+                touch1 := TouchArea {
+                    clicked => { root.properties(); }
+                }
+            }
+            menu-item-2 := Rectangle {
+                height: 28px;
+                background: touch2.has-hover ? AppTheme.bg-hover : transparent;
+                HorizontalBox {
+                    padding: 8px;
+                    Text { text: root.tr-export; font-size: 12px; color: AppTheme.text-primary; }
+                }
+                touch2 := TouchArea {
+                    clicked => { root.export-library(); }
+                }
+            }
+            menu-item-3 := Rectangle {
+                height: 28px;
+                background: touch3.has-hover ? AppTheme.bg-hover : transparent;
+                HorizontalBox {
+                    padding: 8px;
+                    Text { text: root.tr-history; font-size: 12px; color: AppTheme.text-primary; }
+                }
+                touch3 := TouchArea {
+                    clicked => { root.history(); }
+                }
+            }
+            Rectangle { height: 2px; background: AppTheme.separator; }
+            menu-item-4 := Rectangle {
+                height: 28px;
+                background: touch4.has-hover ? AppTheme.bg-hover : transparent;
+                HorizontalBox {
+                    padding: 8px;
+                    Text { text: root.tr-delete; font-size: 12px; color: AppTheme.text-error; }
+                }
+                touch4 := TouchArea {
+                    clicked => { root.delete-library(); }
+                }
+            }
+        }
+    }
+}

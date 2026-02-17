@@ -32,7 +32,7 @@ pub fn import_json_with_versions(path: &Path) -> Result<(Library, Option<Vec<ser
         let library: Library = serde_json::from_value(data["library"].clone())?;
         let versions = data.get("versions")
             .and_then(|v| v.as_array())
-            .map(|v| v.clone());
+            .cloned();
         Ok((library, versions))
     } else {
         // Plain library without versions

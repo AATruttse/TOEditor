@@ -71,8 +71,9 @@ fn test_export_csv_library_with_units() {
     export_csv(&library, file.path()).unwrap();
     
     let content = std::fs::read_to_string(file.path()).unwrap();
-    assert!(content.contains("Test"));
-    assert!(content.contains("1")); // One unit
+    assert!(content.contains("Unit 1"), "CSV should contain unit name");
+    assert!(content.contains("Company"), "CSV should contain unit type");
+    assert!(content.contains("Unit,Type,Parent,Personnel,Equipment"), "CSV should have header");
 }
 
 #[test]
@@ -103,6 +104,7 @@ fn test_export_svg_library_with_special_chars() {
     export_svg(&library, file.path()).unwrap();
     
     let content = std::fs::read_to_string(file.path()).unwrap();
-    assert!(content.contains("Test & <Library>"));
+    // Special characters should be XML-escaped in SVG
+    assert!(content.contains("Test &amp; &lt;Library&gt;"), "Special chars should be XML-escaped");
     assert!(content.contains("svg"));
 }

@@ -1,0 +1,238 @@
+// Dialog components: LibraryDialog, ConfirmDeleteDialog, ErrorDialog
+
+import { Button, VerticalBox, HorizontalBox, LineEdit } from "std-widgets.slint";
+import { AppTheme } from "theme.slint";
+
+export component LibraryDialog inherits Window {
+    width: 500px;
+    height: 420px;
+    title: "Library Properties";
+    background: AppTheme.bg-dialog;
+
+    in-out property <string> library-name: "";
+    in-out property <string> library-country: "";
+    in-out property <string> library-era: "";
+    in-out property <string> library-author: "";
+    in-out property <string> library-tags: "";
+
+    callback accepted();
+    callback cancelled();
+
+    forward-focus: key-handler;
+
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancelled();
+                return accept;
+            }
+            if (event.text == Key.Return && event.modifiers.control) {
+                root.accepted();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 10px;
+
+        Text {
+            text: "Library Properties";
+            font-size: 18px;
+            font-weight: 700;
+            color: AppTheme.text-primary;
+        }
+
+        Rectangle { height: 10px; }
+
+        VerticalBox {
+            spacing: 8px;
+
+            Text {
+                text: "Name:";
+                font-size: 12px;
+                color: AppTheme.text-primary;
+            }
+            LineEdit {
+                text <=> root.library-name;
+                placeholder-text: "e.g. US Army 2003";
+            }
+
+            Text {
+                text: "Country:";
+                font-size: 12px;
+                color: AppTheme.text-primary;
+            }
+            LineEdit {
+                text <=> root.library-country;
+                placeholder-text: "e.g. US, RU, DE";
+            }
+
+            Text {
+                text: "Era:";
+                font-size: 12px;
+                color: AppTheme.text-primary;
+            }
+            LineEdit {
+                text <=> root.library-era;
+                placeholder-text: "e.g. 2003, 2020";
+            }
+
+            Text {
+                text: "Author:";
+                font-size: 12px;
+                color: AppTheme.text-primary;
+            }
+            LineEdit {
+                text <=> root.library-author;
+                placeholder-text: "Author name";
+            }
+
+            Text {
+                text: "Tags (comma-separated):";
+                font-size: 12px;
+                color: AppTheme.text-primary;
+            }
+            LineEdit {
+                text <=> root.library-tags;
+                placeholder-text: "modern, nato, ...";
+            }
+        }
+
+        Rectangle { height: 20px; }
+
+        HorizontalBox {
+            alignment: end;
+            spacing: 10px;
+
+            Button {
+                text: "Cancel";
+                clicked => {
+                    root.cancelled();
+                }
+            }
+            Button {
+                text: "OK";
+                clicked => {
+                    root.accepted();
+                }
+            }
+        }
+    }
+}
+
+export component ConfirmDeleteDialog inherits Window {
+    width: 420px;
+    height: 180px;
+    title: root.dialog-title;
+    background: AppTheme.bg-dialog;
+
+    in-out property <string> message: "";
+    in-out property <string> dialog-title: "Delete library?";
+    in-out property <string> cancel-text: "Cancel";
+    in-out property <string> delete-text: "Delete";
+
+    callback confirmed();
+    callback cancelled();
+
+    forward-focus: key-handler;
+
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancelled();
+                return accept;
+            }
+            if (event.text == Key.Return) {
+                root.confirmed();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 16px;
+
+        Text {
+            text: root.message;
+            font-size: 14px;
+            wrap: word-wrap;
+            color: AppTheme.text-primary;
+        }
+
+        Rectangle { height: 10px; }
+
+        HorizontalBox {
+            alignment: end;
+            spacing: 10px;
+
+            Button {
+                text: root.cancel-text;
+                clicked => {
+                    root.cancelled();
+                }
+            }
+            Button {
+                text: root.delete-text;
+                clicked => {
+                    root.confirmed();
+                }
+            }
+        }
+    }
+}
+
+export component ErrorDialog inherits Window {
+    width: 420px;
+    height: 180px;
+    title: root.dialog-title;
+    background: AppTheme.bg-dialog;
+
+    in-out property <string> message: "";
+    in-out property <string> dialog-title: "Error";
+    in-out property <string> ok-text: "OK";
+
+    callback dismissed();
+
+    forward-focus: key-handler;
+
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape || event.text == Key.Return) {
+                root.dismissed();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 16px;
+
+        Text {
+            text: root.message;
+            font-size: 14px;
+            wrap: word-wrap;
+            color: AppTheme.text-error;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        HorizontalBox {
+            alignment: end;
+            spacing: 10px;
+
+            Button {
+                text: root.ok-text;
+                clicked => {
+                    root.dismissed();
+                }
+            }
+        }
+    }
+}

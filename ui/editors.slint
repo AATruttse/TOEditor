@@ -1,0 +1,522 @@
+// Editor components: FormationLevelsEditor, BranchesEditor, BranchCategoriesEditor
+
+import { Button, VerticalBox, HorizontalBox, ScrollView, LineEdit } from "std-widgets.slint";
+import { AppTheme } from "theme.slint";
+
+export struct BranchRow {
+    id: int,
+    category-id: int,
+    name-ru: string,
+    name-en: string,
+}
+
+export struct CategoryItem {
+    id: int,
+    name: string,
+}
+
+export struct CategoryRow {
+    id: int,
+    name-ru: string,
+    name-en: string,
+}
+
+export struct FormationLevelRow {
+    id: int,
+    name-ru: string,
+    name-en: string,
+    standard-level-ordinal: int,
+}
+
+export struct OtherLibraryItem {
+    id: int,
+    name: string,
+}
+
+// ============================================================
+// Formation Levels Editor
+// ============================================================
+export component FormationLevelsEditor inherits Window {
+    width: 750px;
+    height: 520px;
+    title: root.tr-formation-levels-title;
+    background: AppTheme.bg-content;
+
+    in-out property <int> library-id: -1;
+    in-out property <string> library-name: "";
+    in-out property <[FormationLevelRow]> custom-levels: [];
+    in-out property <int> current-index: -1;
+    in-out property <string> current-name-ru: "";
+    in-out property <string> current-name-en: "";
+    in-out property <int> current-standard-ordinal: 0;
+    in-out property <[string]> standard-level-names: [];
+
+    in-out property <string> tr-formation-levels-title: "Formation levels";
+    in-out property <string> tr-name-russian: "Name (Russian)";
+    in-out property <string> tr-name-english: "Name (English)";
+    in-out property <string> tr-corresponds-to: "Corresponds to";
+    in-out property <string> tr-add-level: "Add level";
+    in-out property <string> tr-delete-level: "Delete level";
+    in-out property <string> tr-export: "Export…";
+    in-out property <string> tr-import: "Import…";
+    in-out property <string> tr-copy-from-library: "Copy from library";
+    in-out property <string> tr-close: "Close";
+    in-out property <[OtherLibraryItem]> other-libraries: [];
+    in-out property <int> copy-source-index: -1;
+
+    callback add-level();
+    callback delete-level();
+    callback export-levels();
+    callback import-levels();
+    callback copy-from-library();
+    callback close-editor();
+    callback selection-changed(int);
+    callback form-changed(string, string, int);
+
+    forward-focus: key-handler;
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.close-editor();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    HorizontalLayout {
+        // Left panel: list of formation levels
+        Rectangle {
+            width: 220px;
+            background: AppTheme.bg-panel;
+            border-width: 1px;
+            border-color: AppTheme.border-light;
+
+            VerticalLayout {
+                padding: 8px;
+                spacing: 4px;
+
+                Text {
+                    text: root.tr-formation-levels-title;
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: AppTheme.text-primary;
+                }
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        for level[index] in root.custom-levels: Rectangle {
+                            background: index == root.current-index ? AppTheme.bg-selected : (touch-level.has-hover ? AppTheme.bg-hover : AppTheme.bg-item);
+                            border-width: 1px;
+                            border-color: AppTheme.border-light;
+                            min-height: 30px;
+                            HorizontalLayout {
+                                padding: 6px;
+                                Text {
+                                    text: level.name-ru;
+                                    font-size: 12px;
+                                    overflow: elide;
+                                    color: AppTheme.text-primary;
+                                }
+                            }
+                            touch-level := TouchArea {
+                                clicked => { root.selection-changed(index); }
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 4px;
+                    Button { text: root.tr-add-level; clicked => { root.add-level(); } }
+                    Button { text: root.tr-delete-level; clicked => { root.delete-level(); } }
+                }
+            }
+        }
+
+        // Right side: form + bottom action bar
+        VerticalLayout {
+            horizontal-stretch: 1;
+
+            // Form area
+            VerticalLayout {
+                vertical-stretch: 1;
+                padding: 12px;
+                spacing: 8px;
+
+                Text { text: root.tr-name-russian; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                LineEdit { text <=> root.current-name-ru; }
+
+                Text { text: root.tr-name-english; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                LineEdit { text <=> root.current-name-en; }
+
+                Text { text: root.tr-corresponds-to; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        for standard[index] in root.standard-level-names: Rectangle {
+                            background: index == root.current-standard-ordinal ? AppTheme.bg-highlight : (touch-std.has-hover ? AppTheme.bg-hover : AppTheme.bg-item-alt);
+                            border-width: 1px;
+                            border-color: AppTheme.border-light;
+                            min-height: 26px;
+                            HorizontalLayout {
+                                padding: 4px;
+                                Text { text: standard; font-size: 12px; color: AppTheme.text-primary; }
+                            }
+                            touch-std := TouchArea {
+                                clicked => {
+                                    root.current-standard-ordinal = index;
+                                    root.form-changed(root.current-name-ru, root.current-name-en, index);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Copy from library section
+                Text { text: root.tr-copy-from-library; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                ScrollView {
+                    max-height: 80px;
+                    VerticalLayout {
+                        for lib[index] in root.other-libraries: Rectangle {
+                            background: index == root.copy-source-index ? AppTheme.bg-highlight : (touch-copy-fl.has-hover ? AppTheme.bg-hover : AppTheme.bg-item-alt);
+                            min-height: 22px;
+                            HorizontalLayout {
+                                padding: 4px;
+                                Text { text: lib.name; font-size: 11px; color: AppTheme.text-primary; }
+                            }
+                            touch-copy-fl := TouchArea {
+                                clicked => { root.copy-source-index = index; }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Bottom action bar
+            Rectangle {
+                height: 44px;
+                background: AppTheme.bg-toolbar;
+                border-width: 1px;
+                border-color: AppTheme.border-light;
+                HorizontalLayout {
+                    padding: 6px;
+                    spacing: 6px;
+
+                    Button { text: root.tr-export; clicked => { root.export-levels(); } }
+                    Button { text: root.tr-import; clicked => { root.import-levels(); } }
+                    Button { text: root.tr-copy-from-library; clicked => { root.copy-from-library(); } }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    Button { text: root.tr-close; clicked => { root.close-editor(); } }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================
+// Branches Editor
+// ============================================================
+export component BranchesEditor inherits Window {
+    width: 720px;
+    height: 500px;
+    title: root.tr-branches-title;
+    background: AppTheme.bg-content;
+
+    in-out property <int> library-id: -1;
+    in-out property <string> library-name: "";
+    in-out property <[BranchRow]> branches: [];
+    in-out property <int> current-index: -1;
+    in-out property <string> current-name-ru: "";
+    in-out property <string> current-name-en: "";
+    in-out property <[CategoryItem]> categories: [];
+    in-out property <int> current-category-index: -1;
+
+    in-out property <string> tr-branches-title: "Branches of service";
+    in-out property <string> tr-name-russian: "Name (Russian)";
+    in-out property <string> tr-name-english: "Name (English)";
+    in-out property <string> tr-category: "Category";
+    in-out property <string> tr-add: "Add";
+    in-out property <string> tr-delete: "Delete";
+    in-out property <string> tr-export: "Export…";
+    in-out property <string> tr-import: "Import…";
+    in-out property <string> tr-copy-from-library: "Copy from library";
+    in-out property <string> tr-close: "Close";
+    in-out property <[OtherLibraryItem]> other-libraries: [];
+    in-out property <int> copy-source-index: -1;
+
+    callback add-branch();
+    callback delete-branch();
+    callback export-branches();
+    callback import-branches();
+    callback copy-from-library();
+    callback close-editor();
+    callback selection-changed(int);
+    callback category-changed(int);
+
+    forward-focus: key-handler;
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.close-editor();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    HorizontalLayout {
+        // Left panel: list
+        Rectangle {
+            width: 200px;
+            background: AppTheme.bg-panel;
+            border-width: 1px;
+            border-color: AppTheme.border-light;
+
+            VerticalLayout {
+                padding: 8px;
+                spacing: 4px;
+
+                Text { text: root.tr-branches-title; font-size: 14px; font-weight: 700; color: AppTheme.text-primary; }
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        for branch[index] in root.branches: Rectangle {
+                            background: index == root.current-index ? AppTheme.bg-selected : (touch-branch.has-hover ? AppTheme.bg-hover : AppTheme.bg-item);
+                            border-width: 1px;
+                            border-color: AppTheme.border-light;
+                            min-height: 30px;
+                            HorizontalLayout {
+                                padding: 6px;
+                                Text { text: branch.name-ru; font-size: 12px; overflow: elide; color: AppTheme.text-primary; }
+                            }
+                            touch-branch := TouchArea { clicked => { root.selection-changed(index); } }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 4px;
+                    Button { text: root.tr-add; clicked => { root.add-branch(); } }
+                    Button { text: root.tr-delete; clicked => { root.delete-branch(); } }
+                }
+            }
+        }
+
+        // Right side: form + bottom action bar
+        VerticalLayout {
+            horizontal-stretch: 1;
+
+            // Form area
+            VerticalLayout {
+                vertical-stretch: 1;
+                padding: 12px;
+                spacing: 8px;
+
+                Text { text: root.tr-name-russian; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                LineEdit { text <=> root.current-name-ru; }
+
+                Text { text: root.tr-name-english; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                LineEdit { text <=> root.current-name-en; }
+
+                Text { text: root.tr-category; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                ScrollView {
+                    max-height: 80px;
+                    VerticalLayout {
+                        for cat[index] in root.categories: Rectangle {
+                            background: index == root.current-category-index ? AppTheme.bg-highlight : (touch-cat.has-hover ? AppTheme.bg-hover : AppTheme.bg-item-alt);
+                            min-height: 24px;
+                            HorizontalLayout {
+                                padding: 4px;
+                                Text { text: cat.name; font-size: 12px; color: AppTheme.text-primary; }
+                            }
+                            touch-cat := TouchArea { clicked => { root.category-changed(index); } }
+                        }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                // Copy from library section
+                Text { text: root.tr-copy-from-library; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                ScrollView {
+                    max-height: 80px;
+                    VerticalLayout {
+                        for lib[index] in root.other-libraries: Rectangle {
+                            background: index == root.copy-source-index ? AppTheme.bg-highlight : (touch-copy-br.has-hover ? AppTheme.bg-hover : AppTheme.bg-item-alt);
+                            min-height: 22px;
+                            HorizontalLayout {
+                                padding: 4px;
+                                Text { text: lib.name; font-size: 11px; color: AppTheme.text-primary; }
+                            }
+                            touch-copy-br := TouchArea { clicked => { root.copy-source-index = index; } }
+                        }
+                    }
+                }
+            }
+
+            // Bottom action bar
+            Rectangle {
+                height: 44px;
+                background: AppTheme.bg-toolbar;
+                border-width: 1px;
+                border-color: AppTheme.border-light;
+                HorizontalLayout {
+                    padding: 6px;
+                    spacing: 6px;
+
+                    Button { text: root.tr-export; clicked => { root.export-branches(); } }
+                    Button { text: root.tr-import; clicked => { root.import-branches(); } }
+                    Button { text: root.tr-copy-from-library; clicked => { root.copy-from-library(); } }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    Button { text: root.tr-close; clicked => { root.close-editor(); } }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================
+// Branch Categories Editor
+// ============================================================
+export component BranchCategoriesEditor inherits Window {
+    width: 680px;
+    height: 460px;
+    title: root.tr-categories-title;
+    background: AppTheme.bg-content;
+
+    in-out property <int> library-id: -1;
+    in-out property <string> library-name: "";
+    in-out property <[CategoryRow]> categories: [];
+    in-out property <int> current-index: -1;
+    in-out property <string> current-name-ru: "";
+    in-out property <string> current-name-en: "";
+
+    in-out property <string> tr-categories-title: "Branch categories";
+    in-out property <string> tr-name-russian: "Name (Russian)";
+    in-out property <string> tr-name-english: "Name (English)";
+    in-out property <string> tr-add: "Add";
+    in-out property <string> tr-delete: "Delete";
+    in-out property <string> tr-export: "Export…";
+    in-out property <string> tr-import: "Import…";
+    in-out property <string> tr-copy-from-library: "Copy from library";
+    in-out property <string> tr-close: "Close";
+    in-out property <[OtherLibraryItem]> other-libraries: [];
+    in-out property <int> copy-source-index: -1;
+
+    callback add-category();
+    callback delete-category();
+    callback export-categories();
+    callback import-categories();
+    callback copy-from-library();
+    callback close-editor();
+    callback selection-changed(int);
+
+    forward-focus: key-handler;
+    key-handler := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.close-editor();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    HorizontalLayout {
+        // Left panel: list
+        Rectangle {
+            width: 200px;
+            background: AppTheme.bg-panel;
+            border-width: 1px;
+            border-color: AppTheme.border-light;
+
+            VerticalLayout {
+                padding: 8px;
+                spacing: 4px;
+
+                Text { text: root.tr-categories-title; font-size: 14px; font-weight: 700; color: AppTheme.text-primary; }
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        for cat[index] in root.categories: Rectangle {
+                            background: index == root.current-index ? AppTheme.bg-selected : (touch-catitem.has-hover ? AppTheme.bg-hover : AppTheme.bg-item);
+                            border-width: 1px;
+                            border-color: AppTheme.border-light;
+                            min-height: 30px;
+                            HorizontalLayout {
+                                padding: 6px;
+                                Text { text: cat.name-ru; font-size: 12px; overflow: elide; color: AppTheme.text-primary; }
+                            }
+                            touch-catitem := TouchArea { clicked => { root.selection-changed(index); } }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 4px;
+                    Button { text: root.tr-add; clicked => { root.add-category(); } }
+                    Button { text: root.tr-delete; clicked => { root.delete-category(); } }
+                }
+            }
+        }
+
+        // Right side: form + bottom action bar
+        VerticalLayout {
+            horizontal-stretch: 1;
+
+            // Form area
+            VerticalLayout {
+                vertical-stretch: 1;
+                padding: 12px;
+                spacing: 8px;
+
+                Text { text: root.tr-name-russian; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                LineEdit { text <=> root.current-name-ru; }
+
+                Text { text: root.tr-name-english; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                LineEdit { text <=> root.current-name-en; }
+
+                Rectangle { vertical-stretch: 1; }
+
+                // Copy from library section
+                Text { text: root.tr-copy-from-library; font-size: 12px; font-weight: 700; color: AppTheme.text-primary; }
+                ScrollView {
+                    max-height: 100px;
+                    VerticalLayout {
+                        for lib[index] in root.other-libraries: Rectangle {
+                            background: index == root.copy-source-index ? AppTheme.bg-highlight : (touch-copy-cat.has-hover ? AppTheme.bg-hover : AppTheme.bg-item-alt);
+                            min-height: 22px;
+                            HorizontalLayout {
+                                padding: 4px;
+                                Text { text: lib.name; font-size: 11px; color: AppTheme.text-primary; }
+                            }
+                            touch-copy-cat := TouchArea { clicked => { root.copy-source-index = index; } }
+                        }
+                    }
+                }
+            }
+
+            // Bottom action bar
+            Rectangle {
+                height: 44px;
+                background: AppTheme.bg-toolbar;
+                border-width: 1px;
+                border-color: AppTheme.border-light;
+                HorizontalLayout {
+                    padding: 6px;
+                    spacing: 6px;
+
+                    Button { text: root.tr-export; clicked => { root.export-categories(); } }
+                    Button { text: root.tr-import; clicked => { root.import-categories(); } }
+                    Button { text: root.tr-copy-from-library; clicked => { root.copy-from-library(); } }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    Button { text: root.tr-close; clicked => { root.close-editor(); } }
+                }
+            }
+        }
+    }
+}

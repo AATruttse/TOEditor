@@ -148,14 +148,12 @@ impl<'a> UnitRepo<'a> {
         })?;
 
         let mut children = Vec::new();
-        for row in rows {
-            if let Ok(mut child) = row {
-                let child_id = child.id.unwrap();
-                child.personnel = self.load_personnel(child_id)?;
-                child.equipment = self.load_equipment(child_id)?;
-                child.children = self.load_children(child_id)?;
-                children.push(child);
-            }
+        for mut child in rows.flatten() {
+            let child_id = child.id.unwrap();
+            child.personnel = self.load_personnel(child_id)?;
+            child.equipment = self.load_equipment(child_id)?;
+            child.children = self.load_children(child_id)?;
+            children.push(child);
         }
         Ok(children)
     }
@@ -167,15 +165,13 @@ impl<'a> UnitRepo<'a> {
         )?;
         
         let rows = stmt.query_map(params![library_id], |row| {
-            Ok(row.get::<_, i64>(0)?)
+            row.get::<_, i64>(0)
         })?;
 
         let mut units = Vec::new();
-        for row in rows {
-            if let Ok(unit_id) = row {
-                if let Some(unit) = self.get_by_id(unit_id)? {
-                    units.push(unit);
-                }
+        for unit_id in rows.flatten() {
+            if let Some(unit) = self.get_by_id(unit_id)? {
+                units.push(unit);
             }
         }
         Ok(units)

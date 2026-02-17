@@ -35,8 +35,60 @@ impl Database {
         &self.conn
     }
 
-    /// Run database migrations
+    /// Current schema version. Increment when adding new migrations.
+    #[cfg(test)]
+    const CURRENT_SCHEMA_VERSION: i64 = 3;
+
+    /// Get current schema version from the database (0 if table does not exist).
+    fn schema_version(&self) -> i64 {
+        self.conn
+            .query_row(
+                "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// Record a schema version after a migration succeeds.
+    fn set_schema_version(&self, version: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?1, strftime('%s','now'))",
+            rusqlite::params![version],
+        )?;
+        Ok(())
+    }
+
+    /// Run database migrations sequentially based on schema version.
     fn run_migrations(&self) -> Result<()> {
+        // The schema_version table itself is always created first
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at INTEGER NOT NULL
+            );"
+        )?;
+
+        let current = self.schema_version();
+
+        if current < 1 {
+            self.migrate_v1()?;
+            self.set_schema_version(1)?;
+        }
+        if current < 2 {
+            self.migrate_v2()?;
+            self.set_schema_version(2)?;
+        }
+        if current < 3 {
+            self.migrate_v3()?;
+            self.set_schema_version(3)?;
+        }
+
+        Ok(())
+    }
+
+    /// V1: Core tables - libraries, units, personnel, equipment, snapshots + indexes
+    fn migrate_v1(&self) -> Result<()> {
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS libraries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +103,6 @@ impl Database {
             )",
             [],
         )?;
-
         // Migrate existing databases: add author and version columns if they don't exist
         let _ = self.conn.execute(
             "ALTER TABLE libraries ADD COLUMN author TEXT NOT NULL DEFAULT ''",
@@ -111,7 +162,6 @@ impl Database {
             [],
         )?;
 
-        // Create indexes
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_units_library_id ON units(library_id)",
             [],
@@ -125,6 +175,11 @@ impl Database {
             [],
         )?;
 
+        Ok(())
+    }
+
+    /// V2: Formation levels table + index
+    fn migrate_v2(&self) -> Result<()> {
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS formation_levels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,7 +195,11 @@ impl Database {
             "CREATE INDEX IF NOT EXISTS idx_formation_levels_library_id ON formation_levels(library_id)",
             [],
         )?;
+        Ok(())
+    }
 
+    /// V3: Branch categories and branches tables + indexes + category_id column
+    fn migrate_v3(&self) -> Result<()> {
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS branch_categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,7 +229,6 @@ impl Database {
             "CREATE INDEX IF NOT EXISTS idx_branches_library_id ON branches(library_id)",
             [],
         )?;
-        // Migration: add category_id to branches (for branch categories support)
         let _ = self.conn.execute("ALTER TABLE branches ADD COLUMN category_id INTEGER", []);
 
         Ok(())
@@ -218,6 +276,29 @@ mod tests {
         assert!(tables.contains(&"libraries".to_string()));
         assert!(tables.contains(&"branches".to_string()));
         assert!(tables.contains(&"branch_categories".to_string()));
+    }
+
+    #[test]
+    fn test_schema_version_tracking() {
+        let db = Database::open_in_memory().unwrap();
+        assert_eq!(db.schema_version(), Database::CURRENT_SCHEMA_VERSION);
+
+        // Verify schema_version table has entries
+        let count: i64 = db.conn()
+            .query_row("SELECT COUNT(*) FROM schema_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, Database::CURRENT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn test_schema_version_table_exists() {
+        let db = Database::open_in_memory().unwrap();
+        let mut stmt = db.conn().prepare("SELECT name FROM sqlite_master WHERE type='table'").unwrap();
+        let tables: Vec<String> = stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(tables.contains(&"schema_version".to_string()));
     }
 
     #[test]
